@@ -4,7 +4,8 @@ import SwiftUI
 
 /// Borderless, non-activating panel above the menu bar (CodeIsland's KeyablePanel).
 private final class NotchPanel: NSPanel {
-    override var canBecomeKey: Bool { true }
+    // Never key: keystrokes stay with the user's app. Clicks still land via acceptsFirstMouse.
+    override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }
     // AppKit clamps borderless windows below the menu bar on display changes; keep our frame.
     override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect { frameRect }
@@ -12,11 +13,6 @@ private final class NotchPanel: NSPanel {
 
 private final class NotchHostingView<Content: View>: NSHostingView<Content> {
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
-    // A non-activating panel isn't key, so the first click would only focus it; make it key first.
-    override func mouseDown(with event: NSEvent) {
-        window?.makeKey()
-        super.mouseDown(with: event)
-    }
 }
 
 @MainActor
@@ -27,6 +23,7 @@ final class NotchController {
     private var monitors: [Any] = []
     private var exitTimer: Timer?
     private var leftAt: Date?
+    private var enteredAt: Date?
     private var cancellables: Set<AnyCancellable> = []
 
     static let panelSize = CGSize(width: 440, height: 300)
@@ -82,19 +79,39 @@ final class NotchController {
                               width: Self.panelSize.width, height: Self.panelSize.height), display: true)
     }
 
-    private func hotRect() -> NSRect {
-        let r = state.shapeRect(running: store.runningCount, done: store.done.count)
+    private func toScreen(_ r: CGRect) -> NSRect {
         let f = panel.frame
-        // Grow upward past the screen edge so the topmost pixel row counts as inside.
-        return NSRect(x: f.minX + r.minX, y: f.maxY - r.maxY, width: r.width, height: r.height + 4)
+        return NSRect(x: f.minX + r.minX, y: f.maxY - r.maxY, width: r.width, height: r.height)
+    }
+
+    /// The notch and wing, plus, when expanded, the list below the menu bar. The expanded shape's
+    /// top strip beside the notch is left out so menu bar items there stay clickable.
+    private func isHot(_ p: NSPoint) -> Bool {
+        let running = store.runningCount, done = store.done.count
+        var top = toScreen(state.collapsedRect(running: running, done: done))
+        top.size.height += 4 // past the screen edge, so the topmost pixel row counts
+        if top.contains(p) { return true }
+        guard state.expanded else { return false }
+        let g = state.geometry
+        var below = state.shapeRect(running: running, done: done)
+        below.origin.y = g.notchHeight
+        below.size.height -= g.notchHeight
+        return toScreen(below).contains(p)
     }
 
     private func updateHover() {
-        let inside = hotRect().contains(NSEvent.mouseLocation)
-        panel.ignoresMouseEvents = !inside
+        let inside = isHot(NSEvent.mouseLocation)
+        if panel.ignoresMouseEvents == inside { panel.ignoresMouseEvents = !inside }
         if inside {
             leftAt = nil
-            if !state.expanded { state.expanded = true }
+            // Dwell briefly so sweeping across the menu bar doesn't pop the list open.
+            if !state.expanded {
+                if let enteredAt, Date().timeIntervalSince(enteredAt) > 0.2 {
+                    state.expanded = true
+                } else if enteredAt == nil {
+                    enteredAt = Date()
+                }
+            }
         } else if state.expanded {
             // Brief grace period so crossing a gap or overshooting an edge doesn't collapse it.
             if let leftAt, Date().timeIntervalSince(leftAt) > 0.18 {
@@ -104,7 +121,8 @@ final class NotchController {
                 leftAt = Date()
             }
         }
-        // Local mouseMoved events stop once the panel isn't key, so poll until we're out.
+        if !inside { enteredAt = nil }
+        // A panel that is never key gets no mouseMoved events of its own, so poll until we're out.
         if state.expanded || inside {
             if exitTimer == nil {
                 exitTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 20, repeats: true) { [weak self] _ in
@@ -120,6 +138,8 @@ final class NotchController {
     private func open(_ thread: AgentThread) {
         state.expanded = false
         panel.ignoresMouseEvents = true
+        // Accessory apps can't activate others on their own; hand over the user's click.
+        NSApp.yieldActivation(toApplicationWithBundleIdentifier: "com.t3tools.t3code")
         if let env = store.environmentId, let url = URL(string: "t3code://threads/\(env)/\(thread.id)") {
             NSWorkspace.shared.open(url)
         } else if let app = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.t3tools.t3code") {

@@ -5,7 +5,11 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 ./build.sh
-APP="$(pwd)/build/t3notch.app"
+# Run a copy, so a rebuild (which deletes build/) never pulls the binary out from under launchd.
+APP="$HOME/Applications/t3notch.app"
+mkdir -p "$HOME/Applications"
+rm -rf "$APP"
+ditto build/t3notch.app "$APP"
 PLIST="$HOME/Library/LaunchAgents/com.kimirti.t3notch.plist"
 
 cat > "$PLIST" <<EOF
@@ -17,7 +21,7 @@ cat > "$PLIST" <<EOF
     <key>ProgramArguments</key>
     <array><string>$APP/Contents/MacOS/t3notch</string></array>
     <key>RunAtLoad</key><true/>
-    <key>KeepAlive</key><true/>
+    <key>KeepAlive</key><dict><key>SuccessfulExit</key><false/></dict>
     <key>StandardErrorPath</key><string>$HOME/Library/Logs/t3notch.log</string>
 </dict>
 </plist>

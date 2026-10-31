@@ -12,5 +12,5 @@ swiftc -O -swift-version 5 \
   -o "$APP/Contents/MacOS/t3notch" \
   Sources/*.swift
 
-codesign --force --sign - "$APP" >/dev/null 2>&1 || true
+codesign --force --sign - "$APP"
 echo "built $APP"

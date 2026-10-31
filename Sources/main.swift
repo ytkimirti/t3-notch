@@ -10,8 +10,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         let config: Config
         do { config = try Config.load() } catch {
+            // Exit 0 so launchd (KeepAlive: SuccessfulExit false) doesn't restart it every 10s.
             log("cannot read \(Config.path): \(error)")
-            exit(1)
+            exit(0)
         }
         let client = T3Client(config: config, store: store)
         self.client = client

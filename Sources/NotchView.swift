@@ -8,7 +8,6 @@ struct NotchGeometry: Equatable {
     var notchWidth: CGFloat
     var notchHeight: CGFloat
 
-    var notchMaxX: CGFloat { notchMinX + notchWidth }
     var notchMidX: CGFloat { notchMinX + notchWidth / 2 }
 }
 
@@ -32,13 +31,18 @@ final class NotchState: ObservableObject {
         return 12 + content + CGFloat(items.count - 1) * 8 + 8
     }
 
-    /// The black shape's frame in panel-local coordinates; also the hover hot zone.
+    /// The notch plus its wing, in panel-local coordinates.
+    func collapsedRect(running: Int, done: Int) -> CGRect {
+        let g = geometry
+        let wing = wingWidth(running: running, done: done)
+        return CGRect(x: g.notchMinX - wing, y: 0, width: g.notchWidth + wing, height: g.notchHeight)
+    }
+
+    /// The black shape's frame in panel-local coordinates.
     func shapeRect(running: Int, done: Int) -> CGRect {
         let g = geometry
         let wing = wingWidth(running: running, done: done)
-        if !expanded {
-            return CGRect(x: g.notchMinX - wing, y: 0, width: g.notchWidth + wing, height: g.notchHeight)
-        }
+        if !expanded { return collapsedRect(running: running, done: done) }
         let half = max(Self.expandedWidth / 2, g.notchMidX - (g.notchMinX - wing))
         let rows = max(1, min(done, Self.maxRows))
         let more = done > Self.maxRows ? Self.moreHeight : 0
@@ -159,16 +163,13 @@ private struct Counts: View {
     }
 }
 
+/// Drawn still: a forever-spinning arc would redraw the panel every frame while anything runs.
 private struct Spinner: View {
-    @State private var spin = false
-
     var body: some View {
         Circle()
             .trim(from: 0, to: 0.7)
             .stroke(Color(red: 0.45, green: 0.75, blue: 1), style: StrokeStyle(lineWidth: 1.8, lineCap: .round))
-            .rotationEffect(.degrees(spin ? 360 : 0))
-            .animation(.linear(duration: 0.9).repeatForever(autoreverses: false), value: spin)
-            .onAppear { spin = true }
+            .rotationEffect(.degrees(-30))
     }
 }
 

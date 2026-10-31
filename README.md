@@ -5,9 +5,10 @@ The black wing grown out of the notch's left edge shows how many agents are work
 (blue spinner) and how many finished since you last looked (green check). Hover the notch
 to list the finished ones; click one to open that thread in T3 Code.
 
-"Working" and "finished" follow T3's own sidebar: a thread counts as working while its run is
-preparing, queued, starting, running, or waiting (not when it is only blocked on child threads),
-and as finished when its latest run completed or failed after you last opened it.
+"Finished" means a row T3's sidebar marks Completed or Failed: a top-level thread whose run
+ended after you last opened it, and that is not settled, archived, waiting on background work, or
+asking for approval or input. "Working" uses T3's Working and Connecting rules but also counts
+subagents, since each is an agent at work; a parent blocked on its subagents is not counted.
 
 The notch window, shape, and hover handling follow [CodeIsland](https://github.com/wxtsky/CodeIsland).
 
@@ -27,7 +28,7 @@ On the Mac, write `~/.config/t3-notch/config.json` (mode 600):
 
 Use a full hostname: URLSession upgrades `http://dev` to HTTPS because `.dev` is HSTS-preloaded.
 
-Then `./install.sh` builds the app and runs it as a LaunchAgent. Logs go to `~/Library/Logs/t3notch.log`.
+Then `./install.sh` builds the app, copies it to `~/Applications`, and runs it as a LaunchAgent. Logs go to `~/Library/Logs/t3notch.log`.
 
 ## How it works
 

@@ -22,6 +22,7 @@ final class T3Client {
     private var generation = 0
     private var backoff: TimeInterval = 1
     private var lastPong = Date()
+    private var fetchingEnvironment = false
 
     init(config: Config, store: Store) {
         self.config = config
@@ -35,7 +36,7 @@ final class T3Client {
         connect()
     }
 
-    /// Drops the socket and dials again right away (wake from sleep, network change).
+    /// Drops the socket and dials again right away (wake from sleep).
     func reconnectNow() {
         backoff = 1
         connect()
@@ -46,7 +47,6 @@ final class T3Client {
         let gen = generation
         task?.cancel(with: .goingAway, reason: nil)
         store.connected = false
-        Task { await fetchEnvironmentId() }
 
         guard var comps = URLComponents(string: config.url) else { return }
         comps.scheme = comps.scheme == "https" ? "wss" : "ws"
@@ -59,7 +59,7 @@ final class T3Client {
         self.task = task
         task.resume()
         lastPong = Date()
-        send([
+        send(task, [
             "_tag": "Request", "id": "1", "tag": "orchestration.subscribeShell",
             "payload": ["omitIdleSubagents": true, "omitOlderSettled": true], "headers": [],
         ])
@@ -71,9 +71,11 @@ final class T3Client {
         while gen == generation {
             let message: URLSessionWebSocketTask.Message
             do { message = try await task.receive() } catch {
-                log("receive failed: \(error.localizedDescription)")
+                if gen == generation { log("receive failed: \(error.localizedDescription)") }
                 break
             }
+            // A socket we already replaced can still deliver a message; drop it.
+            guard gen == generation else { return }
             let data: Data
             switch message {
             case .string(let s): data = Data(s.utf8)
@@ -85,14 +87,15 @@ final class T3Client {
             for m in messages {
                 switch m["_tag"] as? String {
                 case "Chunk":
-                    store.connected = true
+                    if !store.connected { store.connected = true }
                     backoff = 1
+                    if store.environmentId == nil { Task { await fetchEnvironmentId() } }
                     for v in m["values"] as? [[String: Any]] ?? [] { store.apply(v, firstSnapshot: &firstSnapshot) }
-                    send(["_tag": "Ack", "requestId": m["requestId"] ?? "1"])
+                    send(task, ["_tag": "Ack", "requestId": m["requestId"] ?? "1"])
                 case "Pong":
                     lastPong = Date()
                 case "Ping":
-                    send(["_tag": "Pong"])
+                    send(task, ["_tag": "Pong"])
                 case "Exit", "Defect", "ClientProtocolError":
                     log("stream ended: \(String(data: data.prefix(300), encoding: .utf8) ?? "")")
                     task.cancel(with: .goingAway, reason: nil)
@@ -115,18 +118,20 @@ final class T3Client {
             reconnectNow()
             return
         }
-        send(["_tag": "Ping"])
+        if let task { send(task, ["_tag": "Ping"]) }
     }
 
-    private func send(_ object: [String: Any]) {
+    private func send(_ task: URLSessionWebSocketTask, _ object: [String: Any]) {
         guard let data = try? JSONSerialization.data(withJSONObject: object),
               let text = String(data: data, encoding: .utf8) else { return }
-        task?.send(.string(text)) { _ in }
+        task.send(.string(text)) { _ in }
     }
 
     private func fetchEnvironmentId() async {
-        guard store.environmentId == nil,
+        guard store.environmentId == nil, !fetchingEnvironment,
               let url = URL(string: config.url + "/.well-known/t3/environment") else { return }
+        fetchingEnvironment = true
+        defer { fetchingEnvironment = false }
         do {
             let (data, _) = try await session.data(from: url)
             let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
