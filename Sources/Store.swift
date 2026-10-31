@@ -1,70 +1,98 @@
 import Foundation
 
-/// The fields of T3's `OrchestrationV2ThreadShell` the notch needs, and the status rules of T3's
-/// default sidebar over them (client-runtime `shellRuntime`, web `resolveSidebarThreadStatus`).
+/// T3's default sidebar status (web `resolveSidebarThreadStatus`).
+enum SidebarStatus { case attention, waiting, working, failed, ready }
+
+/// The fields of T3's `OrchestrationV2ThreadShell` the notch needs, with T3's rules ported as
+/// literally as possible: client-runtime `shellRuntime`, `toSidebarThreadSummary` and
+/// `effectiveSnoozed`, web `resolveSidebarThreadStatus` and `hasUnseenCompletion/Failure`.
 struct AgentThread: Identifiable, Equatable {
     let id: String
     let projectId: String
     let title: String
-    let status: String
-    let runtimeStatus: String
+    let runtimeStatus: String?
     let blockedOnThreadWait: Bool
     let latestRunCompletedAt: Date?
     let lastVisitedAt: Date?
     let isSubagent: Bool
     let isShelved: Bool
+    let snoozedAt: Date?
     let snoozedUntil: Date?
+    let hasRuntimeRequest: Bool
     let needsAttention: Bool
-    let backgroundWorkHolds: Bool
 
     init?(_ json: [String: Any]) {
         guard let id = json["id"] as? String, let status = json["status"] as? String else { return nil }
         self.id = id
         projectId = json["projectId"] as? String ?? ""
         title = (json["title"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "Untitled"
-        self.status = status
         blockedOnThreadWait = json["blockedOnThreadWait"] as? Bool ?? false
         latestRunCompletedAt = parseDate(json["latestRunCompletedAt"])
         lastVisitedAt = parseDate(json["lastVisitedAt"])
         isSubagent = ((json["lineage"] as? [String: Any])?["relationshipToParent"] as? String) == "subagent"
-        isShelved = present(json["archivedAt"]) || present(json["deletedAt"])
-            || (json["settledOverride"] as? String) == "settled"
+        isShelved = present(json["archivedAt"]) || (json["settledOverride"] as? String) == "settled"
+        snoozedAt = parseDate(json["snoozedAt"])
         snoozedUntil = parseDate(json["snoozedUntil"])
-        // Approval, input and guest requests outrank done; auth refreshes don't (models.ts).
-        let request = json["pendingRuntimeRequest"] as? [String: Any]
-        needsAttention = (request != nil && request?["kind"] as? String != "auth_refresh")
-            || (json["pendingGuestMessageCount"] as? Int ?? 0) > 0
-        // orchestrationV2PendingBackgroundWork.backgroundWorkHoldsCompletion
-        backgroundWorkHolds = (json["pendingBackgroundTasks"] as? [[String: Any]] ?? []).contains {
+
+        // shellRuntime: background work the agent waits on parks the thread at idle.
+        let holds = (json["pendingBackgroundTasks"] as? [[String: Any]] ?? []).contains {
             $0["awaited"] as? Bool == true || ["subagent", "background_task"].contains($0["kind"] as? String ?? "")
         }
-        let activity = (json["activityRunStatus"] as? String) ?? status
-        runtimeStatus = backgroundWorkHolds && status != "failed" ? "idle" : activity
-    }
-
-    /// T3's "Working" and "Connecting" pills. Subagents count too: each one is an agent at work,
-    /// while a parent blocked on them or parked on background work does not.
-    var isRunning: Bool {
-        switch runtimeStatus {
-        case "preparing", "queued", "starting", "waiting": return true
-        case "running": return !blockedOnThreadWait
-        default: return false
+        let parkAtIdle = holds && status != "failed"
+        if !present(json["latestRunId"]) && !present(json["activeProviderThreadId"]) && !parkAtIdle {
+            runtimeStatus = nil
+        } else {
+            runtimeStatus = parkAtIdle ? "idle" : (json["activityRunStatus"] as? String) ?? status
         }
+
+        // toSidebarThreadSummary: hasPendingApprovals, hasPendingUserInput, pendingGuestMessageCount.
+        let request = json["pendingRuntimeRequest"] as? [String: Any]
+        let kind = request?["kind"] as? String
+        let runtimeIsWorking = ["preparing", "starting", "running"].contains(runtimeStatus ?? "")
+        let approval = request != nil && kind != "user_input" && kind != "auth_refresh"
+        let input = kind == "user_input" && (request?["blocking"] as? Bool != false || !runtimeIsWorking)
+        hasRuntimeRequest = request != nil
+        needsAttention = approval || input || (json["pendingGuestMessageCount"] as? Int ?? 0) > 0
     }
 
-    /// The sidebar's "waiting": blocked on child threads, or parked at idle on background work.
-    private var isWaiting: Bool { (runtimeStatus == "running" && blockedOnThreadWait) || runtimeStatus == "idle" }
+    var sidebarStatus: SidebarStatus {
+        if needsAttention { return .attention }
+        if runtimeStatus == "running" && blockedOnThreadWait { return .waiting }
+        if ["preparing", "queued", "starting", "running", "waiting"].contains(runtimeStatus ?? "") { return .working }
+        if runtimeStatus == "idle" { return .waiting }
+        if runtimeStatus == "failed" { return .failed }
+        return .ready
+    }
 
-    var isFailed: Bool { status == "failed" }
+    /// Subagents count too: each is an agent at work. A parent blocked on them is "waiting".
+    var isRunning: Bool { sidebarStatus == .working }
 
-    /// A sidebar row showing "done" (hasUnseenCompletion), or a failure you haven't opened since
-    /// (hasUnseenFailure). The sidebar keeps showing failures after a visit; the notch doesn't.
+    var isFailed: Bool { sidebarStatus == .failed }
+
+    /// effectiveSnoozed: hidden until snoozedUntil, unless it raised a hand meanwhile.
+    func isSnoozed(now: Date) -> Bool {
+        guard let snoozedUntil, snoozedUntil > now else { return false }
+        if needsAttention || hasRuntimeRequest { return false }
+        guard isFailed else { return true }
+        guard let snoozedAt else { return false }
+        guard let failedAt = latestRunCompletedAt else { return true }
+        return failedAt <= snoozedAt
+    }
+
+    /// A sidebar row showing "done", or a failure you haven't opened since it failed. The sidebar
+    /// keeps showing failures after a visit; the notch lists only what you haven't seen.
     func isUnseenDone(now: Date) -> Bool {
-        if isSubagent || isShelved || isRunning || isWaiting || needsAttention { return false }
-        if let snoozedUntil, snoozedUntil > now { return false }
-        guard let completed = latestRunCompletedAt else { return isFailed }
-        guard let visited = lastVisitedAt else { return isFailed }
-        return completed > visited
+        if isSubagent || isShelved || isSnoozed(now: now) { return false }
+        switch sidebarStatus {
+        case .ready:
+            guard let completed = latestRunCompletedAt, let visited = lastVisitedAt else { return false }
+            return completed > visited
+        case .failed:
+            guard let completed = latestRunCompletedAt, let visited = lastVisitedAt else { return true }
+            return completed > visited
+        default:
+            return false
+        }
     }
 }
 
@@ -92,6 +120,7 @@ final class Store: ObservableObject {
     private(set) var threads: [String: AgentThread] = [:] {
         didSet { recompute() }
     }
+    private var snoozeTimer: Timer?
 
     func projectName(_ id: String) -> String { projects[id] ?? "" }
 
@@ -103,6 +132,15 @@ final class Store: ObservableObject {
         }
         if running != runningCount { runningCount = running }
         if finished != done { done = finished }
+
+        // The server sends nothing when a snooze runs out; recompute then ourselves.
+        snoozeTimer?.invalidate()
+        snoozeTimer = nil
+        if let wake = threads.values.compactMap(\.snoozedUntil).filter({ $0 > now }).min() {
+            snoozeTimer = Timer.scheduledTimer(withTimeInterval: wake.timeIntervalSince(now) + 1, repeats: false) { [weak self] _ in
+                MainActor.assumeIsolated { self?.recompute() }
+            }
+        }
     }
 
     /// The first snapshot on a connection replaces everything. Later snapshots are project

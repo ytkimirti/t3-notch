@@ -98,7 +98,6 @@ struct NotchView: View {
     @ObservedObject var store: Store
     @ObservedObject var state: NotchState
     var open: (AgentThread) -> Void
-    var now: Date? = nil
 
     var body: some View {
         let running = store.runningCount
@@ -124,7 +123,7 @@ struct NotchView: View {
                 .opacity(wing > 0 ? 1 : 0)
 
             if state.expanded {
-                DoneList(store: store, done: done, open: open, now: now ?? Date())
+                DoneList(store: store, done: done, open: open, now: Date())
                     .frame(width: rect.width - 20)
                     .offset(x: rect.minX + 10, y: g.notchHeight + 6)
                     .transition(.opacity)
