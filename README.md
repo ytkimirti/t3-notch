@@ -5,10 +5,11 @@ The black wing grown out of the notch's left edge shows how many agents are work
 (blue spinner) and how many finished since you last looked (green check). Hover the notch
 to list the finished ones; click one to open that thread in T3 Code.
 
-"Finished" means a row T3's sidebar marks Completed or Failed: a top-level thread whose run
-ended after you last opened it, and that is not settled, archived, waiting on background work, or
-asking for approval or input. "Working" uses T3's Working and Connecting rules but also counts
-subagents, since each is an agent at work; a parent blocked on its subagents is not counted.
+"Finished" follows T3's default sidebar: a top-level thread showing "done" (its run ended after
+you last opened it), or one that failed since you last opened it. Settled, snoozed, archived,
+waiting, and approval- or input-blocked threads are left out. "Working" uses the sidebar's working
+rule but also counts subagents, since each is an agent at work; a parent blocked on its subagents
+is not counted.
 
 The notch window, shape, and hover handling follow [CodeIsland](https://github.com/wxtsky/CodeIsland).
 

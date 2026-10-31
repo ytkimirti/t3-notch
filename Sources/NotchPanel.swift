@@ -2,7 +2,7 @@ import AppKit
 import Combine
 import SwiftUI
 
-/// Borderless, non-activating panel above the menu bar (CodeIsland's KeyablePanel).
+/// Borderless, non-activating panel above the menu bar (after CodeIsland's KeyablePanel).
 private final class NotchPanel: NSPanel {
     // Never key: keystrokes stay with the user's app. Clicks still land via acceptsFirstMouse.
     override var canBecomeKey: Bool { false }
@@ -41,7 +41,6 @@ final class NotchController {
         panel.backgroundColor = .clear
         panel.isOpaque = false
         panel.ignoresMouseEvents = true
-        panel.acceptsMouseMovedEvents = true
         let view = NotchView(store: store, state: state) { [weak self] thread in self?.open(thread) }
         let host = NotchHostingView(rootView: view)
         host.frame = NSRect(origin: .zero, size: Self.panelSize)
@@ -138,8 +137,6 @@ final class NotchController {
     private func open(_ thread: AgentThread) {
         state.expanded = false
         panel.ignoresMouseEvents = true
-        // Accessory apps can't activate others on their own; hand over the user's click.
-        NSApp.yieldActivation(toApplicationWithBundleIdentifier: "com.t3tools.t3code")
         if let env = store.environmentId, let url = URL(string: "t3code://threads/\(env)/\(thread.id)") {
             NSWorkspace.shared.open(url)
         } else if let app = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.t3tools.t3code") {

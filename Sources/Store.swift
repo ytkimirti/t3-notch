@@ -1,7 +1,7 @@
 import Foundation
 
-/// The fields of T3's `OrchestrationV2ThreadShell` the notch needs, and T3's own status rules
-/// (client-runtime `shellRuntime`, web `resolveThreadStatusPill`) over them.
+/// The fields of T3's `OrchestrationV2ThreadShell` the notch needs, and the status rules of T3's
+/// default sidebar over them (client-runtime `shellRuntime`, web `resolveSidebarThreadStatus`).
 struct AgentThread: Identifiable, Equatable {
     let id: String
     let projectId: String
@@ -13,6 +13,7 @@ struct AgentThread: Identifiable, Equatable {
     let lastVisitedAt: Date?
     let isSubagent: Bool
     let isShelved: Bool
+    let snoozedUntil: Date?
     let needsAttention: Bool
     let backgroundWorkHolds: Bool
 
@@ -28,10 +29,11 @@ struct AgentThread: Identifiable, Equatable {
         isSubagent = ((json["lineage"] as? [String: Any])?["relationshipToParent"] as? String) == "subagent"
         isShelved = present(json["archivedAt"]) || present(json["deletedAt"])
             || (json["settledOverride"] as? String) == "settled"
-        // Pending Approval, Awaiting Input, Guest Request and Plan Ready all outrank Completed.
-        needsAttention = present(json["pendingRuntimeRequest"])
+        snoozedUntil = parseDate(json["snoozedUntil"])
+        // Approval, input and guest requests outrank done; auth refreshes don't (models.ts).
+        let request = json["pendingRuntimeRequest"] as? [String: Any]
+        needsAttention = (request != nil && request?["kind"] as? String != "auth_refresh")
             || (json["pendingGuestMessageCount"] as? Int ?? 0) > 0
-            || ((json["interactionMode"] as? String) == "plan" && json["hasActionableProposedPlan"] as? Bool == true)
         // orchestrationV2PendingBackgroundWork.backgroundWorkHoldsCompletion
         backgroundWorkHolds = (json["pendingBackgroundTasks"] as? [[String: Any]] ?? []).contains {
             $0["awaited"] as? Bool == true || ["subagent", "background_task"].contains($0["kind"] as? String ?? "")
@@ -50,15 +52,16 @@ struct AgentThread: Identifiable, Equatable {
         }
     }
 
-    /// T3's "Waiting" pill.
-    private var isWaiting: Bool { (runtimeStatus == "running" && blockedOnThreadWait) || backgroundWorkHolds }
+    /// The sidebar's "waiting": blocked on child threads, or parked at idle on background work.
+    private var isWaiting: Bool { (runtimeStatus == "running" && blockedOnThreadWait) || runtimeStatus == "idle" }
 
     var isFailed: Bool { status == "failed" }
 
-    /// A sidebar row whose pill is "Failed" or "Completed": its run ended after you last opened it.
-    /// Never-opened threads only count when they failed (hasUnseenFailure / hasUnseenCompletion).
-    var isUnseenDone: Bool {
+    /// A sidebar row showing "done" (hasUnseenCompletion), or a failure you haven't opened since
+    /// (hasUnseenFailure). The sidebar keeps showing failures after a visit; the notch doesn't.
+    func isUnseenDone(now: Date) -> Bool {
         if isSubagent || isShelved || isRunning || isWaiting || needsAttention { return false }
+        if let snoozedUntil, snoozedUntil > now { return false }
         guard let completed = latestRunCompletedAt else { return isFailed }
         guard let visited = lastVisitedAt else { return isFailed }
         return completed > visited
@@ -94,7 +97,8 @@ final class Store: ObservableObject {
 
     private func recompute() {
         let running = threads.values.filter(\.isRunning).count
-        let finished = threads.values.filter(\.isUnseenDone).sorted {
+        let now = Date()
+        let finished = threads.values.filter { $0.isUnseenDone(now: now) }.sorted {
             ($0.latestRunCompletedAt ?? .distantPast) > ($1.latestRunCompletedAt ?? .distantPast)
         }
         if running != runningCount { runningCount = running }

@@ -1,7 +1,7 @@
 import Foundation
 
 struct Config: Decodable {
-    let url: String      // e.g. http://dev:3773
+    let url: String      // e.g. http://dev.tail1c1140.ts.net:3773 (ATS allows plain HTTP to ts.net only)
     let token: String    // `t3 auth session issue --scope orchestration:read --token-only`
 
     static let path = NSString(string: "~/.config/t3-notch/config.json").expandingTildeInPath
