@@ -211,7 +211,7 @@ private struct Row: View {
         Button(action: action) {
             HStack(spacing: 7) {
                 Circle()
-                    .fill(thread.isFailed ? Color(red: 1, green: 0.4, blue: 0.4) : Color(red: 0.35, green: 0.85, blue: 0.5))
+                    .fill(dotColor)
                     .frame(width: 6, height: 6)
                 Text(thread.title)
                     .font(.system(size: 12, weight: .medium))
@@ -234,6 +234,12 @@ private struct Row: View {
         }
         .buttonStyle(.plain)
         .onHover { hover = $0 }
+    }
+
+    // T3's sidebar: red for failed, amber for "Limited" (failed on a usage limit), green for done.
+    private var dotColor: Color {
+        if !thread.isFailed { return Color(red: 0.35, green: 0.85, blue: 0.5) }
+        return thread.isUsageLimited ? Color(red: 1, green: 0.75, blue: 0.3) : Color(red: 1, green: 0.4, blue: 0.4)
     }
 
     private func age(_ date: Date?) -> String {

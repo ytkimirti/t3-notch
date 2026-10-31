@@ -49,7 +49,6 @@ final class NotchController {
 
     func show() {
         reposition()
-        panel.orderFrontRegardless()
 
         monitors.append(NSEvent.addGlobalMonitorForEvents(matching: [.mouseMoved, .leftMouseDragged]) { [weak self] _ in
             MainActor.assumeIsolated { self?.updateHover() }
@@ -71,11 +70,17 @@ final class NotchController {
     private func reposition() {
         let screen = Self.targetScreen()
         state.geometry = Self.geometry(for: screen)
-        guard let screen else { return }
+        // Lid closed or no notched display: there's no notch to grow out of, so stay hidden.
+        guard let screen else {
+            state.expanded = false
+            panel.orderOut(nil)
+            return
+        }
         let g = state.geometry
         let notchScreenMinX = Self.notchScreenMinX(screen)
         panel.setFrame(NSRect(x: notchScreenMinX - g.notchMinX, y: screen.frame.maxY - Self.panelSize.height,
                               width: Self.panelSize.width, height: Self.panelSize.height), display: true)
+        panel.orderFrontRegardless()
     }
 
     private func toScreen(_ r: CGRect) -> NSRect {
@@ -99,7 +104,7 @@ final class NotchController {
     }
 
     private func updateHover() {
-        let inside = isHot(NSEvent.mouseLocation)
+        let inside = panel.isVisible && isHot(NSEvent.mouseLocation)
         if panel.ignoresMouseEvents == inside { panel.ignoresMouseEvents = !inside }
         if inside {
             leftAt = nil
@@ -146,24 +151,18 @@ final class NotchController {
 
     // MARK: Screen geometry (CodeIsland's ScreenDetector)
 
+    /// The built-in display with a notch, if one is connected and awake.
     static func targetScreen() -> NSScreen? {
-        NSScreen.screens.first { $0.auxiliaryTopLeftArea != nil } ?? NSScreen.main ?? NSScreen.screens.first
+        NSScreen.screens.first { $0.auxiliaryTopLeftArea != nil && $0.auxiliaryTopRightArea != nil }
     }
 
     private static func notchSize(_ screen: NSScreen) -> CGSize {
-        if let left = screen.auxiliaryTopLeftArea, let right = screen.auxiliaryTopRightArea {
-            return CGSize(width: screen.frame.width - left.width - right.width, height: screen.safeAreaInsets.top)
-        }
-        // No notch: a pseudo-notch at the top centre, as tall as the menu bar.
-        let menuBar = screen.frame.maxY - screen.visibleFrame.maxY
-        return CGSize(width: 180, height: menuBar > 0 ? menuBar : 24)
+        let left = screen.auxiliaryTopLeftArea?.width ?? 0, right = screen.auxiliaryTopRightArea?.width ?? 0
+        return CGSize(width: screen.frame.width - left - right, height: screen.safeAreaInsets.top)
     }
 
     private static func notchScreenMinX(_ screen: NSScreen) -> CGFloat {
-        if let left = screen.auxiliaryTopLeftArea, screen.auxiliaryTopRightArea != nil {
-            return screen.frame.minX + left.width
-        }
-        return screen.frame.midX - notchSize(screen).width / 2
+        screen.frame.minX + (screen.auxiliaryTopLeftArea?.width ?? 0)
     }
 
     static func geometry(for screen: NSScreen?) -> NotchGeometry {

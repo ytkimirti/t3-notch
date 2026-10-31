@@ -20,6 +20,7 @@ struct AgentThread: Identifiable, Equatable {
     let snoozedUntil: Date?
     let hasRuntimeRequest: Bool
     let needsAttention: Bool
+    let isUsageLimited: Bool
 
     init?(_ json: [String: Any]) {
         guard let id = json["id"] as? String, let status = json["status"] as? String else { return nil }
@@ -27,6 +28,7 @@ struct AgentThread: Identifiable, Equatable {
         projectId = json["projectId"] as? String ?? ""
         title = (json["title"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "Untitled"
         blockedOnThreadWait = json["blockedOnThreadWait"] as? Bool ?? false
+        isUsageLimited = (json["lastErrorClass"] as? String) == "usage_limit"
         latestRunCompletedAt = parseDate(json["latestRunCompletedAt"])
         lastVisitedAt = parseDate(json["lastVisitedAt"])
         isSubagent = ((json["lineage"] as? [String: Any])?["relationshipToParent"] as? String) == "subagent"

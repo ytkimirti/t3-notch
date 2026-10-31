@@ -3,7 +3,8 @@
 Shows [T3 Code](https://github.com/ytkimirti/t3code) agent activity in the MacBook notch.
 The black wing grown out of the notch's left edge shows how many agents are working
 (blue spinner) and how many finished since you last looked (green check). Hover the notch
-to list the finished ones; click one to open that thread in T3 Code.
+to list the finished ones (red: failed, amber: hit a usage limit); click one to open that thread
+in T3 Code. With no notched display (lid closed), it stays hidden.
 
 "Finished" follows T3's default sidebar: a top-level thread showing "done" (its run ended after
 you last opened it), or one that failed since you last opened it. Settled, snoozed, archived,
