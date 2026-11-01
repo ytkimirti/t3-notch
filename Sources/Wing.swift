@@ -43,7 +43,7 @@ struct WingLayout: Equatable {
         self.running = running
         self.done = done
         let (shapeWidth, gap, maxRunning, maxDone): (CGFloat, CGFloat, Int, Int) = switch style {
-        case .critters: (Self.critterSize.width, 4, 4, 3)
+        case .critters: (Self.critterSize.width, 4, 3, 3)
         case .equalizer: (Self.barWidth, 3, 8, 6)
         }
         var items: [Placed] = []
@@ -137,8 +137,7 @@ struct WingLayout: Equatable {
         let legsA = CGMutablePath(), legsB = CGMutablePath()
         pixel(1, 5, legsA); pixel(6, 5, legsA)
         pixel(2, 5, legsB); pixel(5, 5, legsB)
-        let a = shape(legsA, color), b = shape(legsB, color)
-        if !asleep { b.opacity = 0 } // the walk animation swaps the pairs
+        let b = shape(legsB, color)
         root.addSublayer(b)
 
         if asleep {
@@ -159,9 +158,12 @@ struct WingLayout: Equatable {
             z.add(loop([drift, fade], duration: 2.2, offset: Double(index) * 0.8), forKey: "z")
             root.addSublayer(z)
         } else {
+            let a = shape(legsA, color)
+            b.opacity = 0 // the walk animation swaps the pairs
             root.addSublayer(a)
-            // Two-frame walk: swap leg pairs and bob up a point on each step.
-            let step = 0.36, offset = Double(index) * 0.12
+            // Two-frame walk: swap leg pairs and bob up a point on each step. Offsets stay under
+            // one step so no two of the (at most 3) walkers move in lockstep.
+            let step = 0.36, offset = Double(index) * 0.11
             a.add(loop([flip("opacity", [1, 0])], duration: step, offset: offset), forKey: "walk")
             b.add(loop([flip("opacity", [0, 1])], duration: step, offset: offset), forKey: "walk")
             root.add(loop([flip("transform.translation.y", [0, 1])], duration: step, offset: offset), forKey: "hop")

@@ -15,7 +15,7 @@ struct NotchGeometry: Equatable {
 final class NotchState: ObservableObject {
     @Published var geometry: NotchGeometry
     @Published var expanded = false
-    @Published var style: WingStyle = .critters
+    var style: WingStyle = .critters // read from config once at launch
 
     static let rowHeight: CGFloat = 26
     static let maxRows = 8
@@ -39,8 +39,12 @@ final class NotchState: ObservableObject {
         Self.wingWidth(content: wingLayout(running: running, done: done).width)
     }
 
+    /// Space before the wing's first figure and between its last figure and the notch.
+    static let wingLead: CGFloat = 12
+    static let wingTrail: CGFloat = 10
+
     static func wingWidth(content: CGFloat) -> CGFloat {
-        content == 0 ? 0 : 12 + content + 10
+        content == 0 ? 0 : wingLead + content + wingTrail
     }
 
     /// The notch plus its wing, in panel-local coordinates.
@@ -55,11 +59,13 @@ final class NotchState: ObservableObject {
         let g = geometry
         let wing = wingWidth(running: running, done: done)
         if !expanded { return collapsedRect(running: running, done: done) }
-        let half = max(Self.expandedWidth / 2, g.notchMidX - (g.notchMinX - wing))
+        // Reaches left over the wing but no further right than usual, so status items stay visible.
+        let half = Self.expandedWidth / 2
+        let minX = min(g.notchMidX - half, g.notchMinX - wing)
         let rows = max(1, min(done, Self.maxRows))
         let more = done > Self.maxRows ? Self.moreHeight : 0
         let height = g.notchHeight + 6 + CGFloat(rows) * Self.rowHeight + more + 8
-        return CGRect(x: g.notchMidX - half, y: 0, width: half * 2, height: height)
+        return CGRect(x: minX, y: 0, width: g.notchMidX + half - minX, height: height)
     }
 }
 
@@ -136,8 +142,8 @@ struct NotchView: View {
                     Color.clear
                 }
             }
-            .frame(width: max(wing - 22, 0), height: g.notchHeight)
-            .offset(x: g.notchMinX - wing + 12)
+            .frame(width: max(wing - NotchState.wingLead - NotchState.wingTrail, 0), height: g.notchHeight)
+            .offset(x: g.notchMinX - wing + NotchState.wingLead)
             .opacity(wing > 0 ? (store.connected ? 1 : 0.35) : 0)
 
             if state.expanded {

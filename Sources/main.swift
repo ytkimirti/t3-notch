@@ -34,7 +34,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// `--render <dir>`: connect, wait for the first snapshot, write collapsed/expanded PNGs over a
-    /// fake menu bar and notch, print what it would show, and exit. Opens no window.
+    /// fake menu bar and notch plus wing strips for every style, print what it would show, and exit.
+    /// Opens no window.
     private func renderAndExit(to dir: String) async {
         for _ in 0..<100 where !(store.connected && store.environmentId != nil) {
             try? await Task.sleep(nanoseconds: 150_000_000)
@@ -69,7 +70,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let wing = state.wingWidth(running: store.runningCount, done: store.done.count)
             if wing > 0 {
                 ctx.scaleBy(x: 2, y: 2)
-                ctx.translateBy(x: g.notchMinX - wing + 12, y: g.panelSize.height - g.notchHeight)
+                ctx.translateBy(x: g.notchMinX - wing + NotchState.wingLead, y: g.panelSize.height - g.notchHeight)
                 wingLayer(state.wingLayout(running: store.runningCount, done: store.done.count), g.notchHeight).render(in: ctx)
             }
             write(ctx, "\(dir)/\(expanded ? "expanded" : "collapsed").png")
