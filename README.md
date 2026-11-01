@@ -1,8 +1,10 @@
 # t3-notch
 
 Shows [T3 Code](https://github.com/ytkimirti/t3code) agent activity in the MacBook notch.
-The black wing grown out of the notch's left edge shows how many agents are working
-(blue spinner) and how many finished since you last looked (green check). Hover the notch
+The black wing grown out of the notch's left edge shows one figure per agent: blue while it works,
+green once it finished and you haven't looked yet. Past a few of each, a `+N` counts the rest.
+Two styles: `critters` (default), pixel creatures that trot while working and doze when done, and
+`equalizer`, bars that bounce while working and rest short when done. Hover the notch
 to list the finished ones (red: failed, amber: hit a usage limit); click one to open that thread
 in T3 Code. With no notched display (lid closed), it stays hidden.
 
@@ -25,8 +27,10 @@ t3 auth session issue --scope orchestration:read --ttl 3650d --label "notch" --t
 On the Mac, write `~/.config/t3-notch/config.json` (mode 600):
 
 ```json
-{ "url": "http://dev.tail1c1140.ts.net:3773", "token": "<token>" }
+{ "url": "http://dev.tail1c1140.ts.net:3773", "token": "<token>", "style": "critters" }
 ```
+
+`style` is optional: `critters` or `equalizer`. Restart to apply (`launchctl kickstart -k gui/$(id -u)/com.kimirti.t3notch`).
 
 Use a full hostname: URLSession upgrades `http://dev` to HTTPS because `.dev` is HSTS-preloaded.
 
@@ -39,4 +43,6 @@ JSON). The server sends a snapshot, then a `thread.updated` per change, so nothi
 client acks each chunk, pings every 20 s, and reconnects with backoff and on wake.
 
 `build/t3notch.app/Contents/MacOS/t3notch --render <dir>` connects, prints the counts, and writes
-`collapsed.png` and `expanded.png` without opening a window.
+`collapsed.png`, `expanded.png`, and `wing-<style>-<running>-<done>.png` for each style without
+opening a window. The wing animations run in Core Animation, so the app does no per-frame work;
+the PNGs show their resting frame.

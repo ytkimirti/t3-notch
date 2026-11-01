@@ -3,6 +3,14 @@ import Foundation
 struct Config: Decodable {
     let url: String      // e.g. http://dev.tail1c1140.ts.net:3773 (ATS allows plain HTTP to ts.net only)
     let token: String    // `t3 auth session issue --scope orchestration:read --token-only`
+    let style: String?   // "critters" (default) or "equalizer"
+
+    var wingStyle: WingStyle {
+        guard let style else { return .critters }
+        if let s = WingStyle(rawValue: style) { return s }
+        log("unknown style \"\(style)\", using critters")
+        return .critters
+    }
 
     static let path = NSString(string: "~/.config/t3-notch/config.json").expandingTildeInPath
 

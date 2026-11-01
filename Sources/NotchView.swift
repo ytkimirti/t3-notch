@@ -15,6 +15,7 @@ struct NotchGeometry: Equatable {
 final class NotchState: ObservableObject {
     @Published var geometry: NotchGeometry
     @Published var expanded = false
+    @Published var style: WingStyle = .critters
 
     static let rowHeight: CGFloat = 26
     static let maxRows = 8
@@ -23,12 +24,14 @@ final class NotchState: ObservableObject {
 
     init(geometry: NotchGeometry) { self.geometry = geometry }
 
+    func wingLayout(running: Int, done: Int) -> WingLayout {
+        WingLayout(style: style, running: running, done: done)
+    }
+
     /// Width of the black wing grown out of the notch's left edge; zero when there is nothing to show.
     func wingWidth(running: Int, done: Int) -> CGFloat {
-        let items = [running, done].filter { $0 > 0 }
-        if items.isEmpty { return 0 }
-        let content = items.reduce(0) { $0 + 13 + 7 * CGFloat(String($1).count) }
-        return 12 + content + CGFloat(items.count - 1) * 8 + 8
+        let content = wingLayout(running: running, done: done).width
+        return content == 0 ? 0 : 12 + content + 10
     }
 
     /// The notch plus its wing, in panel-local coordinates.
@@ -116,11 +119,17 @@ struct NotchView: View {
                 .offset(x: rect.minX)
                 .opacity(visible ? 1 : 0)
 
-            Counts(running: running, done: done.count, connected: store.connected)
-                .frame(width: max(wing - 8, 0), height: g.notchHeight, alignment: .leading)
-                .padding(.leading, 12)
-                .offset(x: g.notchMinX - wing)
-                .opacity(wing > 0 ? 1 : 0)
+            Group {
+                // ImageRenderer can't draw AppKit views; `--render` composites the layers itself.
+                if renderDir == nil {
+                    WingView(layout: state.wingLayout(running: running, done: done.count), height: g.notchHeight)
+                } else {
+                    Color.clear
+                }
+            }
+            .frame(width: max(wing - 22, 0), height: g.notchHeight)
+            .offset(x: g.notchMinX - wing + 12)
+            .opacity(wing > 0 ? (store.connected ? 1 : 0.35) : 0)
 
             if state.expanded {
                 DoneList(store: store, done: done, open: open, now: Date())
@@ -134,76 +143,6 @@ struct NotchView: View {
         .animation(.spring(response: 0.32, dampingFraction: 0.82), value: wing)
         .environment(\.colorScheme, .dark)
     }
-}
-
-private struct Counts: View {
-    let running: Int
-    let done: Int
-    let connected: Bool
-
-    var body: some View {
-        HStack(spacing: 8) {
-            if running > 0 {
-                HStack(spacing: 4) {
-                    Spinner().frame(width: 10, height: 10)
-                    Text("\(running)").foregroundStyle(runningBlue)
-                }
-            }
-            if done > 0 {
-                HStack(spacing: 4) {
-                    Image(systemName: "checkmark").font(.system(size: 8, weight: .heavy))
-                    Text("\(done)")
-                }
-                .foregroundStyle(Color(red: 0.35, green: 0.85, blue: 0.5))
-            }
-        }
-        .font(.system(size: 11, weight: .semibold, design: .rounded).monospacedDigit())
-        .opacity(connected ? 1 : 0.35)
-    }
-}
-
-private let runningBlue = Color(red: 0.45, green: 0.75, blue: 1)
-
-/// A turning arc, the usual "working" sign, shown only while something runs. Core Animation turns
-/// it in the window server; a SwiftUI animation would redraw the view at 120 Hz (about 9% CPU).
-/// `--render` gets the still arc, since ImageRenderer can't draw an AppKit view.
-private struct Spinner: View {
-    var body: some View {
-        if renderDir == nil {
-            LayerSpinner()
-        } else {
-            Circle()
-                .trim(from: 0, to: 0.7)
-                .stroke(runningBlue, style: StrokeStyle(lineWidth: 1.8, lineCap: .round))
-        }
-    }
-}
-
-private struct LayerSpinner: NSViewRepresentable {
-    func makeNSView(context: Context) -> NSView {
-        let view = NSView(frame: CGRect(x: 0, y: 0, width: 10, height: 10))
-        view.wantsLayer = true
-        let arc = CAShapeLayer()
-        arc.frame = view.bounds
-        arc.contentsScale = 2
-        arc.path = CGPath(ellipseIn: view.bounds.insetBy(dx: 0.9, dy: 0.9), transform: nil)
-        arc.fillColor = nil
-        arc.strokeColor = NSColor(runningBlue).cgColor
-        arc.lineWidth = 1.8
-        arc.lineCap = .round
-        arc.strokeEnd = 0.7
-        let spin = CABasicAnimation(keyPath: "transform.rotation.z")
-        spin.fromValue = 0
-        spin.toValue = -2 * Double.pi // clockwise: AppKit layers are y-up
-        spin.duration = 0.9
-        spin.repeatCount = .infinity
-        spin.isRemovedOnCompletion = false
-        arc.add(spin, forKey: "spin")
-        view.layer?.addSublayer(arc)
-        return view
-    }
-
-    func updateNSView(_ nsView: NSView, context: Context) {}
 }
 
 private struct DoneList: View {

@@ -28,9 +28,10 @@ final class NotchController {
 
     static let panelSize = CGSize(width: 440, height: 300)
 
-    init(store: Store) {
+    init(store: Store, style: WingStyle) {
         self.store = store
         state = NotchState(geometry: Self.geometry(for: Self.targetScreen()))
+        state.style = style
         panel = NotchPanel(contentRect: NSRect(origin: .zero, size: Self.panelSize),
                            styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         panel.isFloatingPanel = true
