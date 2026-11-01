@@ -145,8 +145,8 @@ private struct Counts: View {
         HStack(spacing: 8) {
             if running > 0 {
                 HStack(spacing: 4) {
-                    Spinner().frame(width: 9, height: 9)
-                    Text("\(running)").foregroundStyle(Color(red: 0.45, green: 0.75, blue: 1))
+                    Spinner().frame(width: 10, height: 10)
+                    Text("\(running)").foregroundStyle(runningBlue)
                 }
             }
             if done > 0 {
@@ -162,14 +162,48 @@ private struct Counts: View {
     }
 }
 
-/// Drawn still: a forever-spinning arc would redraw the panel every frame while anything runs.
+private let runningBlue = Color(red: 0.45, green: 0.75, blue: 1)
+
+/// A turning arc, the usual "working" sign, shown only while something runs. Core Animation turns
+/// it in the window server; a SwiftUI animation would redraw the view at 120 Hz (about 9% CPU).
+/// `--render` gets the still arc, since ImageRenderer can't draw an AppKit view.
 private struct Spinner: View {
     var body: some View {
-        Circle()
-            .trim(from: 0, to: 0.7)
-            .stroke(Color(red: 0.45, green: 0.75, blue: 1), style: StrokeStyle(lineWidth: 1.8, lineCap: .round))
-            .rotationEffect(.degrees(-30))
+        if renderDir == nil {
+            LayerSpinner()
+        } else {
+            Circle()
+                .trim(from: 0, to: 0.7)
+                .stroke(runningBlue, style: StrokeStyle(lineWidth: 1.8, lineCap: .round))
+        }
     }
+}
+
+private struct LayerSpinner: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView(frame: CGRect(x: 0, y: 0, width: 10, height: 10))
+        view.wantsLayer = true
+        let arc = CAShapeLayer()
+        arc.frame = view.bounds
+        arc.contentsScale = 2
+        arc.path = CGPath(ellipseIn: view.bounds.insetBy(dx: 0.9, dy: 0.9), transform: nil)
+        arc.fillColor = nil
+        arc.strokeColor = NSColor(runningBlue).cgColor
+        arc.lineWidth = 1.8
+        arc.lineCap = .round
+        arc.strokeEnd = 0.7
+        let spin = CABasicAnimation(keyPath: "transform.rotation.z")
+        spin.fromValue = 0
+        spin.toValue = -2 * Double.pi // clockwise: AppKit layers are y-up
+        spin.duration = 0.9
+        spin.repeatCount = .infinity
+        spin.isRemovedOnCompletion = false
+        arc.add(spin, forKey: "spin")
+        view.layer?.addSublayer(arc)
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {}
 }
 
 private struct DoneList: View {
