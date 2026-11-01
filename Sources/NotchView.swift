@@ -24,14 +24,23 @@ final class NotchState: ObservableObject {
 
     init(geometry: NotchGeometry) { self.geometry = geometry }
 
+    private var layoutCache: WingLayout?
+
+    /// Cached: hover hit-testing asks on every mouse move, and "+N" layout measures text.
     func wingLayout(running: Int, done: Int) -> WingLayout {
-        WingLayout(style: style, running: running, done: done)
+        if let c = layoutCache, c.style == style, c.running == running, c.done == done { return c }
+        let layout = WingLayout(style: style, running: running, done: done)
+        layoutCache = layout
+        return layout
     }
 
     /// Width of the black wing grown out of the notch's left edge; zero when there is nothing to show.
     func wingWidth(running: Int, done: Int) -> CGFloat {
-        let content = wingLayout(running: running, done: done).width
-        return content == 0 ? 0 : 12 + content + 10
+        Self.wingWidth(content: wingLayout(running: running, done: done).width)
+    }
+
+    static func wingWidth(content: CGFloat) -> CGFloat {
+        content == 0 ? 0 : 12 + content + 10
     }
 
     /// The notch plus its wing, in panel-local coordinates.

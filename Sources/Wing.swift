@@ -27,6 +27,8 @@ struct WingLayout: Equatable {
     }
 
     let style: WingStyle
+    let running: Int
+    let done: Int
     let items: [Placed]
     let width: CGFloat
 
@@ -38,6 +40,8 @@ struct WingLayout: Equatable {
 
     init(style: WingStyle, running: Int, done: Int) {
         self.style = style
+        self.running = running
+        self.done = done
         let (shapeWidth, gap, maxRunning, maxDone): (CGFloat, CGFloat, Int, Int) = switch style {
         case .critters: (Self.critterSize.width, 4, 4, 3)
         case .equalizer: (Self.barWidth, 3, 8, 6)
@@ -65,6 +69,11 @@ struct WingLayout: Equatable {
         }
         self.items = items
         width = x
+    }
+
+    /// The widest this style's content gets: both groups at their cap plus a long "+N".
+    static func widest(_ style: WingStyle) -> CGFloat {
+        WingLayout(style: style, running: 9999, done: 9999).width
     }
 
     /// Fills `root` (y-up, `height` tall) with the wing's layers and their animations.
@@ -205,6 +214,9 @@ struct WingLayout: Equatable {
         g.duration = duration
         g.repeatCount = .infinity
         g.timeOffset = offset
+        // A fixed start in media time, so rebuilding the layers when a count changes keeps each
+        // figure's phase instead of restarting them all in step.
+        g.beginTime = 1
         g.isRemovedOnCompletion = false
         return g
     }

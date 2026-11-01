@@ -6,6 +6,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let store = Store()
     var client: T3Client?
     var controller: NotchController?
+    var style = WingStyle.critters
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let config: Config
@@ -14,6 +15,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             log("cannot read \(Config.path): \(error)")
             exit(0)
         }
+        style = config.wingStyle
         let client = T3Client(config: config, store: store)
         self.client = client
         client.start()
@@ -22,7 +24,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Task { await renderAndExit(to: dir) }
             return
         }
-        let controller = NotchController(store: store, style: config.wingStyle)
+        let controller = NotchController(store: store, style: style)
         self.controller = controller
         controller.show()
         NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification,
@@ -42,6 +44,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         for t in store.done { print("  \(t.isFailed ? "x" : "v") \(t.title) [\(store.projectName(t.projectId))]") }
 
         let state = NotchState(geometry: NotchController.geometry(for: NotchController.targetScreen()))
+        state.style = style
         print("screen=\(NotchController.targetScreen()?.localizedName ?? "none") geometry=\(state.geometry)")
         for expanded in [false, true] {
             state.expanded = expanded

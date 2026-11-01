@@ -26,13 +26,18 @@ final class NotchController {
     private var enteredAt: Date?
     private var cancellables: Set<AnyCancellable> = []
 
-    static let panelSize = CGSize(width: 440, height: 300)
+    /// Wide enough for the widest wing (and the list, which spans it symmetrically) on either side.
+    static func panelSize(notchWidth: CGFloat) -> CGSize {
+        let wing = WingStyle.allCases.map { NotchState.wingWidth(content: WingLayout.widest($0)) }.max() ?? 0
+        let half = max(NotchState.expandedWidth / 2, notchWidth / 2 + wing) + 16
+        return CGSize(width: ceil(half * 2), height: 300)
+    }
 
     init(store: Store, style: WingStyle) {
         self.store = store
         state = NotchState(geometry: Self.geometry(for: Self.targetScreen()))
         state.style = style
-        panel = NotchPanel(contentRect: NSRect(origin: .zero, size: Self.panelSize),
+        panel = NotchPanel(contentRect: NSRect(origin: .zero, size: state.geometry.panelSize),
                            styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         panel.isFloatingPanel = true
         panel.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.mainMenuWindow)) + 2)
@@ -44,7 +49,7 @@ final class NotchController {
         panel.ignoresMouseEvents = true
         let view = NotchView(store: store, state: state) { [weak self] thread in self?.open(thread) }
         let host = NotchHostingView(rootView: view)
-        host.frame = NSRect(origin: .zero, size: Self.panelSize)
+        host.frame = NSRect(origin: .zero, size: state.geometry.panelSize)
         panel.contentView = host
     }
 
@@ -79,8 +84,8 @@ final class NotchController {
         }
         let g = state.geometry
         let notchScreenMinX = Self.notchScreenMinX(screen)
-        panel.setFrame(NSRect(x: notchScreenMinX - g.notchMinX, y: screen.frame.maxY - Self.panelSize.height,
-                              width: Self.panelSize.width, height: Self.panelSize.height), display: true)
+        panel.setFrame(NSRect(x: notchScreenMinX - g.notchMinX, y: screen.frame.maxY - g.panelSize.height,
+                              width: g.panelSize.width, height: g.panelSize.height), display: true)
         panel.orderFrontRegardless()
     }
 
@@ -168,7 +173,8 @@ final class NotchController {
 
     static func geometry(for screen: NSScreen?) -> NotchGeometry {
         let size = screen.map(notchSize) ?? CGSize(width: 185, height: 32)
-        return NotchGeometry(panelSize: panelSize, notchMinX: (panelSize.width - size.width) / 2,
+        let panel = Self.panelSize(notchWidth: size.width)
+        return NotchGeometry(panelSize: panel, notchMinX: (panel.width - size.width) / 2,
                              notchWidth: size.width, notchHeight: size.height)
     }
 }
