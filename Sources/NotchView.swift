@@ -155,7 +155,7 @@ struct NotchView: View {
             }
         }
         .frame(width: g.panelSize.width, height: g.panelSize.height, alignment: .topLeading)
-        .animation(.spring(response: 0.32, dampingFraction: 0.82), value: state.expanded)
+        .animation(.spring(response: 0.18, dampingFraction: 0.86), value: state.expanded)
         .animation(.spring(response: 0.32, dampingFraction: 0.82), value: wing)
         .environment(\.colorScheme, .dark)
     }

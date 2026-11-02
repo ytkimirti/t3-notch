@@ -116,7 +116,7 @@ final class NotchController {
             leftAt = nil
             // Dwell briefly so sweeping across the menu bar doesn't pop the list open.
             if !state.expanded {
-                if let enteredAt, Date().timeIntervalSince(enteredAt) > 0.2 {
+                if let enteredAt, Date().timeIntervalSince(enteredAt) > 0.05 {
                     state.expanded = true
                 } else if enteredAt == nil {
                     enteredAt = Date()
@@ -124,7 +124,7 @@ final class NotchController {
             }
         } else if state.expanded {
             // Brief grace period so crossing a gap or overshooting an edge doesn't collapse it.
-            if let leftAt, Date().timeIntervalSince(leftAt) > 0.18 {
+            if let leftAt, Date().timeIntervalSince(leftAt) > 0.12 {
                 state.expanded = false
                 self.leftAt = nil
             } else if leftAt == nil {
@@ -135,7 +135,7 @@ final class NotchController {
         // A panel that is never key gets no mouseMoved events of its own, so poll until we're out.
         if state.expanded || inside {
             if exitTimer == nil {
-                exitTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 20, repeats: true) { [weak self] _ in
+                exitTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60, repeats: true) { [weak self] _ in
                     MainActor.assumeIsolated { self?.updateHover() }
                 }
             }
