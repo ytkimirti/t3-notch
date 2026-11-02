@@ -19,8 +19,15 @@ struct AgentThread: Identifiable, Equatable {
     let snoozedAt: Date?
     let snoozedUntil: Date?
     let hasRuntimeRequest: Bool
-    let needsAttention: Bool
     let isUsageLimited: Bool
+    let parentThreadId: String?
+    /// client-runtime `subagentRequest`: a live, T3-made subagent asking for approval or input.
+    /// Rolls up to its ancestors (`pendingSubagentRequestsByThread`), which the Store sets below.
+    let raisesSubagentRequest: Bool
+    var hasSubagentRequest = false
+    private let ownAttention: Bool
+
+    var needsAttention: Bool { ownAttention || hasSubagentRequest }
 
     init?(_ json: [String: Any]) {
         guard let id = json["id"] as? String, let status = json["status"] as? String else { return nil }
@@ -31,7 +38,9 @@ struct AgentThread: Identifiable, Equatable {
         isUsageLimited = (json["lastErrorClass"] as? String) == "usage_limit"
         latestRunCompletedAt = parseDate(json["latestRunCompletedAt"])
         lastVisitedAt = parseDate(json["lastVisitedAt"])
-        isSubagent = ((json["lineage"] as? [String: Any])?["relationshipToParent"] as? String) == "subagent"
+        let lineage = json["lineage"] as? [String: Any]
+        isSubagent = (lineage?["relationshipToParent"] as? String) == "subagent"
+        parentThreadId = lineage?["parentThreadId"] as? String
         isShelved = present(json["archivedAt"]) || (json["settledOverride"] as? String) == "settled"
         snoozedAt = parseDate(json["snoozedAt"])
         snoozedUntil = parseDate(json["snoozedUntil"])
@@ -54,7 +63,14 @@ struct AgentThread: Identifiable, Equatable {
         let approval = request != nil && kind != "user_input" && kind != "auth_refresh"
         let input = kind == "user_input" && (request?["blocking"] as? Bool != false || !runtimeIsWorking)
         hasRuntimeRequest = request != nil
-        needsAttention = approval || input || (json["pendingGuestMessageCount"] as? Int ?? 0) > 0
+        ownAttention = approval || input || (json["pendingGuestMessageCount"] as? Int ?? 0) > 0
+
+        // isChildRunLive: activityRunStatus when the server sends the key, else the run status.
+        let childRunLive = json.keys.contains("activityRunStatus")
+            ? present(json["activityRunStatus"])
+            : ["preparing", "starting", "running", "waiting"].contains(status)
+        raisesSubagentRequest = kind != nil && kind != "auth_refresh" && isSubagent
+            && (json["creationSource"] as? String) != "provider" && childRunLive
     }
 
     var sidebarStatus: SidebarStatus {
@@ -68,6 +84,13 @@ struct AgentThread: Identifiable, Equatable {
 
     /// Subagents count too: each is an agent at work. A parent blocked on them is "waiting".
     var isRunning: Bool { sidebarStatus == .working }
+
+    /// A sidebar row showing "Waiting": blocked on another thread, or parked on background work it
+    /// awaits. Subagents have no row, and snoozing or settling their parent can't reach them; the
+    /// parent of a waiting subagent is itself blocked, so it already shows.
+    func isWaiting(now: Date) -> Bool {
+        sidebarStatus == .waiting && !isSubagent && !isShelved && !isSnoozed(now: now)
+    }
 
     var isFailed: Bool { sidebarStatus == .failed }
 
@@ -115,6 +138,7 @@ private func parseDate(_ value: Any?) -> Date? {
 @MainActor
 final class Store: ObservableObject {
     @Published private(set) var runningCount = 0
+    @Published private(set) var waitingCount = 0
     @Published private(set) var done: [AgentThread] = []
     @Published private(set) var projects: [String: String] = [:]
     @Published var connected = false
@@ -122,17 +146,40 @@ final class Store: ObservableObject {
     private(set) var threads: [String: AgentThread] = [:] {
         didSet { recompute() }
     }
+
+    /// `threads` with subagent requests rolled up to every ancestor, as T3's sidebar does.
+    private func withSubagentRequests() -> [AgentThread] {
+        var raised = Set<String>()
+        for child in threads.values where child.raisesSubagentRequest {
+            var seen: Set<String> = [child.id]
+            var current: AgentThread? = child
+            while let c = current, c.isSubagent, let parent = c.parentThreadId, !seen.contains(parent) {
+                seen.insert(parent)
+                raised.insert(parent)
+                current = threads[parent]
+            }
+        }
+        if raised.isEmpty { return Array(threads.values) }
+        return threads.values.map { t in
+            var t = t
+            t.hasSubagentRequest = raised.contains(t.id)
+            return t
+        }
+    }
     private var snoozeTimer: Timer?
 
     func projectName(_ id: String) -> String { projects[id] ?? "" }
 
     private func recompute() {
-        let running = threads.values.filter(\.isRunning).count
+        let all = withSubagentRequests()
+        let running = all.filter(\.isRunning).count
         let now = Date()
-        let finished = threads.values.filter { $0.isUnseenDone(now: now) }.sorted {
+        let waiting = all.filter { $0.isWaiting(now: now) }.count
+        let finished = all.filter { $0.isUnseenDone(now: now) }.sorted {
             ($0.latestRunCompletedAt ?? .distantPast) > ($1.latestRunCompletedAt ?? .distantPast)
         }
         if running != runningCount { runningCount = running }
+        if waiting != waitingCount { waitingCount = waiting }
         if finished != done { done = finished }
 
         // The server sends nothing when a snooze runs out; recompute then ourselves.

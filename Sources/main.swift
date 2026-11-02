@@ -41,7 +41,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             try? await Task.sleep(nanoseconds: 150_000_000)
         }
         print("connected=\(store.connected) environment=\(store.environmentId ?? "-") threads=\(store.threads.count)")
-        print("running=\(store.runningCount) done=\(store.done.count)")
+        print("running=\(store.runningCount) waiting=\(store.waitingCount) done=\(store.done.count)")
         for t in store.done { print("  \(t.isFailed ? "x" : "v") \(t.title) [\(store.projectName(t.projectId))]") }
 
         let state = NotchState(geometry: NotchController.geometry(for: NotchController.targetScreen()))
@@ -67,11 +67,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 exit(1)
             }
             ctx.draw(cg, in: CGRect(x: 0, y: 0, width: cg.width, height: cg.height))
-            let wing = state.wingWidth(running: store.runningCount, done: store.done.count)
+            let wing = state.wingWidth(running: store.runningCount, waiting: store.waitingCount, done: store.done.count)
             if wing > 0 {
                 ctx.scaleBy(x: 2, y: 2)
                 ctx.translateBy(x: g.notchMinX - wing + NotchState.wingLead, y: g.panelSize.height - g.notchHeight)
-                wingLayer(state.wingLayout(running: store.runningCount, done: store.done.count), g.notchHeight).render(in: ctx)
+                wingLayer(state.wingLayout(running: store.runningCount, waiting: store.waitingCount, done: store.done.count), g.notchHeight).render(in: ctx)
             }
             write(ctx, "\(dir)/\(expanded ? "expanded" : "collapsed").png")
         }
@@ -79,16 +79,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Every style at a few counts, including overflow, on a plain black strip.
         let h = state.geometry.notchHeight
         for style in WingStyle.allCases {
-            for (r, d) in [(3, 2), (1, 0), (0, 1), (12, 9)] {
-                let layout = WingLayout(style: style, running: r, done: d)
-                let w = layout.width + 24
-                guard let ctx = bitmap(Int(w * 2), Int(h * 2)) else { exit(1) }
+            for (r, w, d) in [(3, 1, 2), (1, 0, 0), (0, 1, 0), (0, 0, 1), (12, 7, 9)] {
+                let layout = WingLayout(style: style, running: r, waiting: w, done: d)
+                let width = layout.width + 24
+                guard let ctx = bitmap(Int(width * 2), Int(h * 2)) else { exit(1) }
                 ctx.scaleBy(x: 2, y: 2)
                 ctx.setFillColor(.black)
-                ctx.fill(CGRect(x: 0, y: 0, width: w, height: h))
+                ctx.fill(CGRect(x: 0, y: 0, width: width, height: h))
                 ctx.translateBy(x: 12, y: 0)
                 wingLayer(layout, h).render(in: ctx)
-                write(ctx, "\(dir)/wing-\(style.rawValue)-\(r)-\(d).png")
+                write(ctx, "\(dir)/wing-\(style.rawValue)-\(r)-\(w)-\(d).png")
             }
         }
         exit(0)

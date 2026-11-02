@@ -97,13 +97,13 @@ final class NotchController {
     /// The notch and wing, plus, when expanded, the list below the menu bar. The expanded shape's
     /// top strip beside the notch is left out so menu bar items there stay clickable.
     private func isHot(_ p: NSPoint) -> Bool {
-        let running = store.runningCount, done = store.done.count
-        var top = toScreen(state.collapsedRect(running: running, done: done))
+        let running = store.runningCount, waiting = store.waitingCount, done = store.done.count
+        var top = toScreen(state.collapsedRect(running: running, waiting: waiting, done: done))
         top.size.height += 4 // past the screen edge, so the topmost pixel row counts
         if top.contains(p) { return true }
         guard state.expanded else { return false }
         let g = state.geometry
-        var below = state.shapeRect(running: running, done: done)
+        var below = state.shapeRect(running: running, waiting: waiting, done: done)
         below.origin.y = g.notchHeight
         below.size.height -= g.notchHeight
         return toScreen(below).contains(p)

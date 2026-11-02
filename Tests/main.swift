@@ -39,6 +39,7 @@ check(thread(["status": "failed", "pendingBackgroundTasks": [["kind": "subagent"
       "failure ignores background hold")
 
 // Running and waiting.
+let approval = ["kind": "approval", "id": "r", "createdAt": at(-1)]
 check(thread(["status": "running", "latestRunCompletedAt": NSNull()]).isRunning, "running")
 check(thread(["status": "queued"]).isRunning, "queued is working")
 check(thread(["status": "completed", "activityRunStatus": "running"]).isRunning, "activityRunStatus wins")
@@ -48,9 +49,37 @@ check(!parked.isRunning && !parked.isUnseenDone(now: now), "awaited background w
 check(thread(["pendingBackgroundTasks": [["kind": "command", "awaited": false]]]).isUnseenDone(now: now),
       "unawaited command does not hold")
 check(thread(["lineage": ["relationshipToParent": "subagent"], "status": "running"]).isRunning, "running subagent counts")
+check(thread(["status": "running", "blockedOnThreadWait": true]).isWaiting(now: now), "blocked parent counts as waiting")
+check(parked.isWaiting(now: now), "parked thread counts as waiting")
+check(!thread(["status": "running"]).isWaiting(now: now), "running is not waiting")
+check(!thread(["status": "running", "blockedOnThreadWait": true, "lineage": ["relationshipToParent": "subagent"]]).isWaiting(now: now),
+      "waiting subagent is not counted")
+check(!thread().isWaiting(now: now), "done is not waiting")
+check(!thread(["status": "running", "blockedOnThreadWait": true, "pendingRuntimeRequest": approval]).isWaiting(now: now),
+      "approval outranks waiting")
+// A subagent's live request rolls up to its parent, so the blocked parent needs you, not waits.
+MainActor.assumeIsolated {
+    let store = Store()
+    var first = true
+    let parent: [String: Any] = ["id": "p1", "status": "running", "latestRunId": "r", "blockedOnThreadWait": true]
+    var child: [String: Any] = ["id": "c1", "status": "running", "latestRunId": "r", "activityRunStatus": "running",
+                                "lineage": ["relationshipToParent": "subagent", "parentThreadId": "p1"],
+                                "pendingRuntimeRequest": approval]
+    store.apply(["kind": "snapshot", "snapshot": ["threads": [parent, child]]], firstSnapshot: &first)
+    check(store.waitingCount == 0 && store.runningCount == 0, "subagent approval lifts parent out of waiting")
+    child["creationSource"] = "provider"
+    store.apply(["kind": "thread.updated", "location": "active", "thread": child], firstSnapshot: &first)
+    check(store.waitingCount == 1, "provider-native subagent request does not roll up")
+    child["creationSource"] = NSNull(); child["activityRunStatus"] = NSNull()
+    store.apply(["kind": "thread.updated", "location": "active", "thread": child], firstSnapshot: &first)
+    check(store.waitingCount == 1, "ended subagent run does not roll up")
+}
+check(!thread(["status": "running", "blockedOnThreadWait": true, "settledOverride": "settled"]).isWaiting(now: now),
+      "settled is not waiting")
+check(!thread(["status": "running", "blockedOnThreadWait": true, "snoozedUntil": at(30), "snoozedAt": at(-20)]).isWaiting(now: now),
+      "snoozed is not waiting")
 
 // Requests outrank working and done.
-let approval = ["kind": "approval", "id": "r", "createdAt": at(-1)]
 check(!thread(["status": "running", "pendingRuntimeRequest": approval]).isRunning, "approval is not running")
 check(!thread(["pendingRuntimeRequest": approval]).isUnseenDone(now: now), "approval is not done")
 check(thread(["pendingRuntimeRequest": ["kind": "auth_refresh"]]).isUnseenDone(now: now), "auth refresh still done")
@@ -87,6 +116,9 @@ MainActor.assumeIsolated {
     store.apply(["kind": "thread.updated", "location": "active", "thread": t], firstSnapshot: &first)
     store.apply(["kind": "thread.removed", "location": "active", "threadId": "a"], firstSnapshot: &first)
     check(store.done.isEmpty, "removal removes")
+    var blocked = t; blocked["status"] = "running"; blocked["blockedOnThreadWait"] = true
+    store.apply(["kind": "thread.updated", "location": "active", "thread": blocked], firstSnapshot: &first)
+    check(store.waitingCount == 1 && store.runningCount == 0 && store.done.isEmpty, "store counts waiting")
 }
 
 print(failures == 0 ? "all tests passed" : "\(failures) failed")

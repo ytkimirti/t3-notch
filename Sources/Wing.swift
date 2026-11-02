@@ -2,23 +2,29 @@ import AppKit
 import QuartzCore
 import SwiftUI
 
-/// How the left wing shows agents: one shape per agent, blue while working, green when done.
+/// How the left wing shows agents: one shape per agent, blue while working, grey while waiting,
+/// green when done.
 enum WingStyle: String, CaseIterable {
-    /// Pixel creatures: workers trot in place, finished ones doze until you open them.
+    /// Pixel creatures: workers trot in place, waiting ones stand and glance around, finished ones
+    /// doze until you open them.
     case critters
-    /// Bars: workers bounce like audio levels, finished ones rest as short green bars.
+    /// Bars: workers bounce like audio levels, waiting ones idle at half height, finished ones
+    /// rest as short green bars.
     case equalizer
 }
 
 private let blue = NSColor(red: 0.45, green: 0.75, blue: 1, alpha: 1)
 private let green = NSColor(red: 0.35, green: 0.85, blue: 0.5, alpha: 1)
+private let grey = NSColor(white: 0.62, alpha: 1)
 
 /// What sits where in the wing, in points from its left edge. Shared by the SwiftUI sizing and
 /// the layer drawing so the black shape always fits its contents.
 struct WingLayout: Equatable {
+    /// The groups, left to right.
+    enum Group { case running, waiting, done }
     enum Item: Equatable {
-        case runner, sleeper, bar, restingBar
-        case more(Int, done: Bool)
+        case runner, waiter, sleeper, bar, idleBar, restingBar
+        case more(Int, Group)
     }
     struct Placed: Equatable {
         let item: Item
@@ -28,6 +34,7 @@ struct WingLayout: Equatable {
 
     let style: WingStyle
     let running: Int
+    let waiting: Int
     let done: Int
     let items: [Placed]
     let width: CGFloat
@@ -38,13 +45,14 @@ struct WingLayout: Equatable {
     static let barMax: CGFloat = 16
     static let moreFont = NSFont.systemFont(ofSize: 10, weight: .bold)
 
-    init(style: WingStyle, running: Int, done: Int) {
+    init(style: WingStyle, running: Int, waiting: Int, done: Int) {
         self.style = style
         self.running = running
+        self.waiting = waiting
         self.done = done
-        let (shapeWidth, gap, maxRunning, maxDone): (CGFloat, CGFloat, Int, Int) = switch style {
-        case .critters: (Self.critterSize.width, 4, 3, 3)
-        case .equalizer: (Self.barWidth, 3, 8, 6)
+        let (shapeWidth, gap, maxRunning, maxWaiting, maxDone): (CGFloat, CGFloat, Int, Int, Int) = switch style {
+        case .critters: (Self.critterSize.width, 4, 3, 3, 3)
+        case .equalizer: (Self.barWidth, 3, 8, 6, 6)
         }
         var items: [Placed] = []
         var x: CGFloat = 0
@@ -53,56 +61,73 @@ struct WingLayout: Equatable {
             items.append(Placed(item: item, x: x, width: w))
             x += w
         }
-        for (count, cap, isDone) in [(running, maxRunning, false), (done, maxDone, true)] where count > 0 {
-            let shape: Item = switch (style, isDone) {
-            case (.critters, false): .runner
-            case (.critters, true): .sleeper
-            case (.equalizer, false): .bar
-            case (.equalizer, true): .restingBar
+        let groups: [(Int, Int, Group)] = [(running, maxRunning, .running), (waiting, maxWaiting, .waiting), (done, maxDone, .done)]
+        for (count, cap, group) in groups where count > 0 {
+            let shape: Item = switch (style, group) {
+            case (.critters, .running): .runner
+            case (.critters, .waiting): .waiter
+            case (.critters, .done): .sleeper
+            case (.equalizer, .running): .bar
+            case (.equalizer, .waiting): .idleBar
+            case (.equalizer, .done): .restingBar
             }
             for i in 0..<min(count, cap) { add(shape, shapeWidth, gap: i == 0 ? 7 : gap) }
             if count > cap {
                 let text = "+\(count - cap)"
                 let w = ceil(NSAttributedString(string: text, attributes: [.font: Self.moreFont]).size().width)
-                add(.more(count - cap, done: isDone), w, gap: 3)
+                add(.more(count - cap, group), w, gap: 3)
             }
         }
         self.items = items
         width = x
     }
 
-    /// The widest this style's content gets: both groups at their cap plus a long "+N".
+    /// The widest this style's content gets: every group at its cap plus a long "+N".
     static func widest(_ style: WingStyle) -> CGFloat {
-        WingLayout(style: style, running: 9999, done: 9999).width
+        WingLayout(style: style, running: 9999, waiting: 9999, done: 9999).width
+    }
+
+    static func color(_ group: Group) -> NSColor {
+        switch group {
+        case .running: blue
+        case .waiting: grey
+        case .done: green
+        }
     }
 
     /// Fills `root` (y-up, `height` tall) with the wing's layers and their animations.
     func build(into root: CALayer, height: CGFloat) {
         root.sublayers?.forEach { $0.removeFromSuperlayer() }
-        var runnerIndex = 0, sleeperIndex = 0, barIndex = 0
+        var runnerIndex = 0, waiterIndex = 0, sleeperIndex = 0, barIndex = 0, idleIndex = 0
         for p in items {
             switch p.item {
             case .runner:
-                root.addSublayer(Self.critter(x: p.x, height: height, asleep: false, index: runnerIndex))
+                root.addSublayer(Self.critter(x: p.x, height: height, group: .running, index: runnerIndex))
                 runnerIndex += 1
+            case .waiter:
+                root.addSublayer(Self.critter(x: p.x, height: height, group: .waiting, index: waiterIndex))
+                waiterIndex += 1
             case .sleeper:
-                root.addSublayer(Self.critter(x: p.x, height: height, asleep: true, index: sleeperIndex))
+                root.addSublayer(Self.critter(x: p.x, height: height, group: .done, index: sleeperIndex))
                 sleeperIndex += 1
             case .bar:
                 root.addSublayer(Self.bar(x: p.x, height: height, index: barIndex))
                 barIndex += 1
+            case .idleBar:
+                root.addSublayer(Self.idleBar(x: p.x, height: height, index: idleIndex))
+                idleIndex += 1
             case .restingBar:
                 let bar = CALayer()
                 bar.frame = CGRect(x: p.x, y: (height - 4) / 2, width: Self.barWidth, height: 4)
                 bar.backgroundColor = green.cgColor
                 bar.cornerRadius = 1.5
                 root.addSublayer(bar)
-            case .more(let n, let done):
+            case .more(let n, let group):
                 let text = CATextLayer()
                 text.string = "+\(n)"
                 text.font = Self.moreFont
                 text.fontSize = Self.moreFont.pointSize
-                text.foregroundColor = (done ? green : blue).cgColor
+                text.foregroundColor = Self.color(group).cgColor
                 text.contentsScale = 2
                 text.frame = CGRect(x: p.x, y: (height - 13) / 2, width: p.width + 1, height: 13)
                 root.addSublayer(text)
@@ -115,24 +140,28 @@ struct WingLayout: Equatable {
     private static let body = ["..XXXX..", ".XXXXXX.", ".XoXXoX.", "XXXXXXXX", ".XXXXXX."]
 
     /// An 8x6 pixel creature. Rows are listed top-down; layers are y-up.
-    private static func critter(x: CGFloat, height: CGFloat, asleep: Bool, index: Int) -> CALayer {
+    private static func critter(x: CGFloat, height: CGFloat, group: Group, index: Int) -> CALayer {
         let size = critterSize
         let root = CALayer()
         root.frame = CGRect(x: x, y: ((height - size.height) / 2).rounded(), width: size.width, height: size.height)
-        let color = asleep ? green : blue
+        let color = Self.color(group)
+        let asleep = group == .done
         func pixel(_ col: Int, _ row: Int, _ path: CGMutablePath, dy: CGFloat = 0, h: CGFloat = px) {
             path.addRect(CGRect(x: CGFloat(col) * px, y: CGFloat(5 - row) * px + dy, width: px, height: h))
         }
+        // A runner's eyes are holes in its skin. A waiter's sit on solid skin so they can shift.
         let skin = CGMutablePath(), eyes = CGMutablePath()
         for (row, line) in body.enumerated() {
             for (col, c) in line.enumerated() where c != "." {
-                if c == "o" && !asleep { pixel(col, row, eyes) } else { pixel(col, row, skin) }
+                if c == "o" && group == .running { pixel(col, row, eyes) } else { pixel(col, row, skin) }
+                if c == "o" && group == .waiting { pixel(col, row, eyes) }
                 // Closed eyes: a thin dark lid across the lower half of the eye pixel.
                 if c == "o" && asleep { pixel(col, row, eyes, h: px / 2) }
             }
         }
         root.addSublayer(shape(skin, color))
-        root.addSublayer(shape(eyes, .black))
+        let eyeLayer = shape(eyes, .black)
+        root.addSublayer(eyeLayer)
 
         let legsA = CGMutablePath(), legsB = CGMutablePath()
         pixel(1, 5, legsA); pixel(6, 5, legsA)
@@ -140,7 +169,11 @@ struct WingLayout: Equatable {
         let b = shape(legsB, color)
         root.addSublayer(b)
 
-        if asleep {
+        if group == .waiting {
+            // Stands still and glances left, then right, now and then.
+            let glance = flip("transform.translation.x", [0, 0, 0, -1, -1, 0, 0, 0, 1, 1])
+            eyeLayer.add(loop([glance], duration: 4, offset: Double(index) * 1.3), forKey: "glance")
+        } else if asleep {
             let z = CATextLayer()
             z.string = "z"
             z.font = NSFont.monospacedSystemFont(ofSize: 7, weight: .bold)
@@ -189,6 +222,22 @@ struct WingLayout: Equatable {
     }
 
     // MARK: Equalizer
+
+    /// A half-height grey bar that slowly dims and brightens.
+    private static func idleBar(x: CGFloat, height: CGFloat, index: Int) -> CALayer {
+        let bar = CALayer()
+        bar.frame = CGRect(x: x, y: (height - 8) / 2, width: barWidth, height: 8)
+        bar.backgroundColor = grey.cgColor
+        bar.cornerRadius = 1.5
+        let breathe = CABasicAnimation(keyPath: "opacity")
+        breathe.fromValue = 1
+        breathe.toValue = 0.45
+        let anim = loop([breathe], duration: 1.4, offset: Double(index) * 0.35)
+        anim.autoreverses = true
+        anim.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+        bar.add(anim, forKey: "breathe")
+        return bar
+    }
 
     private static let tempos: [CFTimeInterval] = [0.45, 0.3, 0.58, 0.38, 0.5, 0.34, 0.62, 0.42]
 

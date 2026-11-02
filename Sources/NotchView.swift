@@ -27,16 +27,16 @@ final class NotchState: ObservableObject {
     private var layoutCache: WingLayout?
 
     /// Cached: hover hit-testing asks on every mouse move, and "+N" layout measures text.
-    func wingLayout(running: Int, done: Int) -> WingLayout {
-        if let c = layoutCache, c.style == style, c.running == running, c.done == done { return c }
-        let layout = WingLayout(style: style, running: running, done: done)
+    func wingLayout(running: Int, waiting: Int, done: Int) -> WingLayout {
+        if let c = layoutCache, c.style == style, c.running == running, c.waiting == waiting, c.done == done { return c }
+        let layout = WingLayout(style: style, running: running, waiting: waiting, done: done)
         layoutCache = layout
         return layout
     }
 
     /// Width of the black wing grown out of the notch's left edge; zero when there is nothing to show.
-    func wingWidth(running: Int, done: Int) -> CGFloat {
-        Self.wingWidth(content: wingLayout(running: running, done: done).width)
+    func wingWidth(running: Int, waiting: Int, done: Int) -> CGFloat {
+        Self.wingWidth(content: wingLayout(running: running, waiting: waiting, done: done).width)
     }
 
     /// Space before the wing's first figure and between its last figure and the notch.
@@ -48,17 +48,17 @@ final class NotchState: ObservableObject {
     }
 
     /// The notch plus its wing, in panel-local coordinates.
-    func collapsedRect(running: Int, done: Int) -> CGRect {
+    func collapsedRect(running: Int, waiting: Int, done: Int) -> CGRect {
         let g = geometry
-        let wing = wingWidth(running: running, done: done)
+        let wing = wingWidth(running: running, waiting: waiting, done: done)
         return CGRect(x: g.notchMinX - wing, y: 0, width: g.notchWidth + wing, height: g.notchHeight)
     }
 
     /// The black shape's frame in panel-local coordinates.
-    func shapeRect(running: Int, done: Int) -> CGRect {
+    func shapeRect(running: Int, waiting: Int, done: Int) -> CGRect {
         let g = geometry
-        let wing = wingWidth(running: running, done: done)
-        if !expanded { return collapsedRect(running: running, done: done) }
+        let wing = wingWidth(running: running, waiting: waiting, done: done)
+        if !expanded { return collapsedRect(running: running, waiting: waiting, done: done) }
         // Reaches left over the wing but no further right than usual, so status items stay visible.
         let half = Self.expandedWidth / 2
         let minX = min(g.notchMidX - half, g.notchMinX - wing)
@@ -119,10 +119,11 @@ struct NotchView: View {
 
     var body: some View {
         let running = store.runningCount
+        let waiting = store.waitingCount
         let done = store.done
         let g = state.geometry
-        let rect = state.shapeRect(running: running, done: done.count)
-        let wing = state.wingWidth(running: running, done: done.count)
+        let rect = state.shapeRect(running: running, waiting: waiting, done: done.count)
+        let wing = state.wingWidth(running: running, waiting: waiting, done: done.count)
         let visible = state.expanded || wing > 0
 
         ZStack(alignment: .topLeading) {
@@ -137,7 +138,7 @@ struct NotchView: View {
             Group {
                 // ImageRenderer can't draw AppKit views; `--render` composites the layers itself.
                 if renderDir == nil {
-                    WingView(layout: state.wingLayout(running: running, done: done.count), height: g.notchHeight)
+                    WingView(layout: state.wingLayout(running: running, waiting: waiting, done: done.count), height: g.notchHeight)
                 } else {
                     Color.clear
                 }

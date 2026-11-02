@@ -2,17 +2,20 @@
 
 Shows [T3 Code](https://github.com/ytkimirti/t3code) agent activity in the MacBook notch.
 The black wing grown out of the notch's left edge shows one figure per agent: blue while it works,
-green once it finished and you haven't looked yet. Past a few of each, a `+N` counts the rest.
-Two styles: `critters` (default), pixel creatures that trot while working and doze when done, and
-`equalizer`, bars that bounce while working and rest short when done. Hover the notch
+grey while it waits, green once it finished and you haven't looked yet. Past a few of each, a `+N` counts the rest.
+Two styles: `critters` (default), pixel creatures that trot while working, stand and glance
+around while waiting, and doze when done, and `equalizer`, bars that bounce while working, idle at
+half height while waiting, and rest short when done. Hover the notch
 to list the finished ones (red: failed, amber: hit a usage limit); click one to open that thread
 in T3 Code. With no notched display (lid closed), it stays hidden.
 
 "Finished" follows T3's default sidebar: a top-level thread showing "done" (its run ended after
 you last opened it), or one that failed since you last opened it. Settled, snoozed, archived,
 waiting, and approval- or input-blocked threads are left out. "Working" uses the sidebar's working
-rule but also counts subagents, since each is an agent at work; a parent blocked on its subagents
-is not counted.
+rule but also counts subagents, since each is an agent at work. "Waiting" is the sidebar's
+"Waiting": blocked on another thread (such as a parent waiting on its subagents) or parked on
+background work it awaits, top-level only, minus settled and snoozed threads. A subagent's
+approval or input request rolls up to its parents, as in the sidebar, so those count as neither.
 
 The notch window, shape, and hover handling follow [CodeIsland](https://github.com/wxtsky/CodeIsland).
 
@@ -43,6 +46,6 @@ JSON). The server sends a snapshot, then a `thread.updated` per change, so nothi
 client acks each chunk, pings every 20 s, and reconnects with backoff and on wake.
 
 `build/t3notch.app/Contents/MacOS/t3notch --render <dir>` connects, prints the counts, and writes
-`collapsed.png`, `expanded.png`, and `wing-<style>-<running>-<done>.png` for each style without
+`collapsed.png`, `expanded.png`, and `wing-<style>-<running>-<waiting>-<done>.png` for each style without
 opening a window. The wing animations run in Core Animation, so the app does no per-frame work;
 the PNGs show their resting frame.
