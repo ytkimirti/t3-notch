@@ -76,12 +76,17 @@ final class NotchController {
     private func reposition() {
         let screen = Self.targetScreen()
         state.geometry = Self.geometry(for: screen)
-        // No display at all (asleep): nothing to sit on.
-        guard let screen else {
+        // No display (asleep), or no notch and no menu bar reserved (auto-hidden): a pill there
+        // would sit over window content, so stay hidden.
+        guard let screen, Self.hasNotch(screen) || Self.menuBarHeight(screen) > 0 else {
             state.expanded = false
             panel.orderOut(nil)
             return
         }
+        // Over a full-screen app only the notch's dead strip is free; elsewhere it'd cover content.
+        panel.collectionBehavior = Self.hasNotch(screen)
+            ? [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
+            : [.canJoinAllSpaces, .stationary, .ignoresCycle]
         let g = state.geometry
         let notchScreenMinX = Self.notchScreenMinX(screen)
         panel.setFrame(NSRect(x: notchScreenMinX - g.notchMinX, y: screen.frame.maxY - g.panelSize.height,
@@ -168,13 +173,14 @@ final class NotchController {
     }
 
     private static func notchSize(_ screen: NSScreen) -> CGSize {
-        guard hasNotch(screen) else {
-            // The menu bar's height; an auto-hidden menu bar reserves nothing, so fall back.
-            let bar = screen.frame.maxY - screen.visibleFrame.maxY
-            return CGSize(width: 0, height: bar > 0 ? bar : NSStatusBar.system.thickness)
-        }
+        guard hasNotch(screen) else { return CGSize(width: 0, height: menuBarHeight(screen)) }
         let left = screen.auxiliaryTopLeftArea?.width ?? 0, right = screen.auxiliaryTopRightArea?.width ?? 0
         return CGSize(width: screen.frame.width - left - right, height: screen.safeAreaInsets.top)
+    }
+
+    /// What the menu bar reserves at the top; zero when it auto-hides.
+    private static func menuBarHeight(_ screen: NSScreen) -> CGFloat {
+        screen.frame.maxY - screen.visibleFrame.maxY
     }
 
     private static func notchScreenMinX(_ screen: NSScreen) -> CGFloat {

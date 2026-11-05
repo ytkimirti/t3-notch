@@ -8,7 +8,8 @@ around while waiting, and doze when done, and `equalizer`, bars that bounce whil
 half height while waiting, and rest short when done. Hover the notch
 to list the finished ones (red: failed, amber: hit a usage limit); click one to open that thread
 in T3 Code. With no notched display (lid closed), the wing sits as a pill at the top center of
-the main display's menu bar, no wider than its figures.
+the main display's menu bar, no wider than its figures, and hides over full-screen apps or an
+auto-hidden menu bar.
 
 "Finished" follows T3's default sidebar: a top-level thread showing "done" (its run ended after
 you last opened it), or one that failed since you last opened it. Settled, snoozed, archived,

@@ -8,7 +8,7 @@ struct NotchGeometry: Equatable {
     var notchWidth: CGFloat
     var notchHeight: CGFloat
     /// False on a display without a notch (lid closed): `notchWidth` is zero and the wing is a
-    /// pill centered under the middle of the menu bar.
+    /// pill centered in the menu bar.
     var hasNotch = true
 
     var notchMidX: CGFloat { notchMinX + notchWidth / 2 }
@@ -37,12 +37,12 @@ final class NotchState: ObservableObject {
         return layout
     }
 
-    /// Width of the black wing grown out of the notch's left edge; zero when there is nothing to show.
+    /// Width of the black wing; zero when there is nothing to show.
     func wingWidth(running: Int, waiting: Int, done: Int) -> CGFloat {
         Self.wingWidth(content: wingLayout(running: running, waiting: waiting, done: done).width)
     }
 
-    /// Space before the wing's first figure and between its last figure and the notch.
+    /// Space before the wing's first figure and after its last (where the notch begins, if any).
     static let wingLead: CGFloat = 12
     static let wingTrail: CGFloat = 10
 
