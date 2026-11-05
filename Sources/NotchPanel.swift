@@ -76,7 +76,7 @@ final class NotchController {
     private func reposition() {
         let screen = Self.targetScreen()
         state.geometry = Self.geometry(for: screen)
-        // Lid closed or no notched display: there's no notch to grow out of, so stay hidden.
+        // No display at all (asleep): nothing to sit on.
         guard let screen else {
             state.expanded = false
             panel.orderOut(nil)
@@ -157,24 +157,36 @@ final class NotchController {
 
     // MARK: Screen geometry (CodeIsland's ScreenDetector)
 
-    /// The built-in display with a notch, if one is connected and awake.
+    private static func hasNotch(_ screen: NSScreen) -> Bool {
+        screen.auxiliaryTopLeftArea != nil && screen.auxiliaryTopRightArea != nil
+    }
+
+    /// The built-in display with a notch if it's awake, else (lid closed) the primary display,
+    /// where a zero-width "notch" at the top center stands in for it.
     static func targetScreen() -> NSScreen? {
-        NSScreen.screens.first { $0.auxiliaryTopLeftArea != nil && $0.auxiliaryTopRightArea != nil }
+        NSScreen.screens.first(where: hasNotch) ?? NSScreen.screens.first
     }
 
     private static func notchSize(_ screen: NSScreen) -> CGSize {
+        guard hasNotch(screen) else {
+            // The menu bar's height; an auto-hidden menu bar reserves nothing, so fall back.
+            let bar = screen.frame.maxY - screen.visibleFrame.maxY
+            return CGSize(width: 0, height: bar > 0 ? bar : NSStatusBar.system.thickness)
+        }
         let left = screen.auxiliaryTopLeftArea?.width ?? 0, right = screen.auxiliaryTopRightArea?.width ?? 0
         return CGSize(width: screen.frame.width - left - right, height: screen.safeAreaInsets.top)
     }
 
     private static func notchScreenMinX(_ screen: NSScreen) -> CGFloat {
-        screen.frame.minX + (screen.auxiliaryTopLeftArea?.width ?? 0)
+        guard hasNotch(screen) else { return screen.frame.midX }
+        return screen.frame.minX + (screen.auxiliaryTopLeftArea?.width ?? 0)
     }
 
     static func geometry(for screen: NSScreen?) -> NotchGeometry {
         let size = screen.map(notchSize) ?? CGSize(width: 185, height: 32)
         let panel = Self.panelSize(notchWidth: size.width)
         return NotchGeometry(panelSize: panel, notchMinX: (panel.width - size.width) / 2,
-                             notchWidth: size.width, notchHeight: size.height)
+                             notchWidth: size.width, notchHeight: size.height,
+                             hasNotch: screen.map(hasNotch) ?? true)
     }
 }

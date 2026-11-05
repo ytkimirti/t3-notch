@@ -53,10 +53,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let view = ZStack(alignment: .topLeading) {
                 Color(white: 0.82)
                 Color(white: 0.93).frame(height: g.notchHeight)
-                UnevenRoundedRectangle(bottomLeadingRadius: 9, bottomTrailingRadius: 9)
-                    .fill(Color.black)
-                    .frame(width: g.notchWidth, height: g.notchHeight)
-                    .offset(x: g.notchMinX)
+                if g.hasNotch {
+                    UnevenRoundedRectangle(bottomLeadingRadius: 9, bottomTrailingRadius: 9)
+                        .fill(Color.black)
+                        .frame(width: g.notchWidth, height: g.notchHeight)
+                        .offset(x: g.notchMinX)
+                }
                 NotchView(store: store, state: state, open: { _ in })
             }
             .frame(width: g.panelSize.width, height: g.panelSize.height)
@@ -70,7 +72,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let wing = state.wingWidth(running: store.runningCount, waiting: store.waitingCount, done: store.done.count)
             if wing > 0 {
                 ctx.scaleBy(x: 2, y: 2)
-                ctx.translateBy(x: g.notchMinX - wing + NotchState.wingLead, y: g.panelSize.height - g.notchHeight)
+                ctx.translateBy(x: state.wingMinX(wing) + NotchState.wingLead, y: g.panelSize.height - g.notchHeight)
                 wingLayer(state.wingLayout(running: store.runningCount, waiting: store.waitingCount, done: store.done.count), g.notchHeight).render(in: ctx)
             }
             write(ctx, "\(dir)/\(expanded ? "expanded" : "collapsed").png")

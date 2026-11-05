@@ -7,6 +7,9 @@ struct NotchGeometry: Equatable {
     var notchMinX: CGFloat
     var notchWidth: CGFloat
     var notchHeight: CGFloat
+    /// False on a display without a notch (lid closed): `notchWidth` is zero and the wing is a
+    /// pill centered under the middle of the menu bar.
+    var hasNotch = true
 
     var notchMidX: CGFloat { notchMinX + notchWidth / 2 }
 }
@@ -47,11 +50,17 @@ final class NotchState: ObservableObject {
         content == 0 ? 0 : wingLead + content + wingTrail
     }
 
+    /// The wing's left edge: grown out of the notch's left edge, or centered without a notch.
+    func wingMinX(_ wing: CGFloat) -> CGFloat {
+        let g = geometry
+        return g.hasNotch ? g.notchMinX - wing : g.notchMidX - wing / 2
+    }
+
     /// The notch plus its wing, in panel-local coordinates.
     func collapsedRect(running: Int, waiting: Int, done: Int) -> CGRect {
         let g = geometry
         let wing = wingWidth(running: running, waiting: waiting, done: done)
-        return CGRect(x: g.notchMinX - wing, y: 0, width: g.notchWidth + wing, height: g.notchHeight)
+        return CGRect(x: wingMinX(wing), y: 0, width: g.notchWidth + wing, height: g.notchHeight)
     }
 
     /// The black shape's frame in panel-local coordinates.
@@ -61,7 +70,7 @@ final class NotchState: ObservableObject {
         if !expanded { return collapsedRect(running: running, waiting: waiting, done: done) }
         // Reaches left over the wing but no further right than usual, so status items stay visible.
         let half = Self.expandedWidth / 2
-        let minX = min(g.notchMidX - half, g.notchMinX - wing)
+        let minX = min(g.notchMidX - half, wingMinX(wing))
         let rows = max(1, min(done, Self.maxRows))
         let more = done > Self.maxRows ? Self.moreHeight : 0
         let height = g.notchHeight + 6 + CGFloat(rows) * Self.rowHeight + more + 8
@@ -128,7 +137,7 @@ struct NotchView: View {
 
         ZStack(alignment: .topLeading) {
             NotchShape(leftExtension: state.expanded ? 10 : 5,
-                       rightExtension: state.expanded ? 10 : 0,
+                       rightExtension: state.expanded ? 10 : (g.hasNotch ? 0 : 5),
                        bottomRadius: state.expanded ? 18 : 9)
                 .fill(Color.black)
                 .frame(width: rect.width, height: rect.height)
@@ -144,7 +153,7 @@ struct NotchView: View {
                 }
             }
             .frame(width: max(wing - NotchState.wingLead - NotchState.wingTrail, 0), height: g.notchHeight)
-            .offset(x: g.notchMinX - wing + NotchState.wingLead)
+            .offset(x: state.wingMinX(wing) + NotchState.wingLead)
             .opacity(wing > 0 ? (store.connected ? 1 : 0.35) : 0)
 
             if state.expanded {
