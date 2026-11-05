@@ -67,6 +67,11 @@ final class NotchController {
                                                object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.reposition() }
         }
+        // Without a notch, whether a menu bar is reserved can change with the Space.
+        NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.activeSpaceDidChangeNotification,
+                                                          object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.reposition() }
+        }
         // The hot zone changes size when counts change; re-check while the mouse sits still.
         store.objectWillChange.sink { [weak self] _ in
             DispatchQueue.main.async { self?.updateHover() }

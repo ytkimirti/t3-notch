@@ -53,7 +53,7 @@ final class NotchState: ObservableObject {
     /// The wing's left edge: grown out of the notch's left edge, or centered without a notch.
     func wingMinX(_ wing: CGFloat) -> CGFloat {
         let g = geometry
-        return g.hasNotch ? g.notchMinX - wing : g.notchMidX - wing / 2
+        return g.hasNotch ? g.notchMinX - wing : (g.notchMidX - wing / 2).rounded()
     }
 
     /// The notch plus its wing, in panel-local coordinates.
@@ -79,7 +79,8 @@ final class NotchState: ObservableObject {
 }
 
 /// CodeIsland's NotchPanelShape (wxtsky/CodeIsland, NotchPanelView.swift), with separate left and
-/// right "ears" so the collapsed wing flares only on its outer side and sits flush with the notch.
+/// right "ears" so the collapsed wing flares only on its outer side and sits flush with the notch
+/// (without a notch, the pill flares on both).
 struct NotchShape: Shape {
     var leftExtension: CGFloat
     var rightExtension: CGFloat
