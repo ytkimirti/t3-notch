@@ -50,10 +50,11 @@ struct WingLayout: Equatable {
         self.running = running
         self.waiting = waiting
         self.done = done
-        let (shapeWidth, gap, maxRunning, maxWaiting, maxDone): (CGFloat, CGFloat, Int, Int, Int) = switch style {
-        case .critters: (Self.critterSize.width, 4, 3, 3, 3)
-        case .equalizer: (Self.barWidth, 3, 8, 6, 6)
+        let (shapeWidth, gap): (CGFloat, CGFloat) = switch style {
+        case .critters: (Self.critterSize.width, 4)
+        case .equalizer: (Self.barWidth, 3)
         }
+        let caps = Self.slots([running, waiting, done])
         var items: [Placed] = []
         var x: CGFloat = 0
         func add(_ item: Item, _ w: CGFloat, gap: CGFloat) {
@@ -61,7 +62,7 @@ struct WingLayout: Equatable {
             items.append(Placed(item: item, x: x, width: w))
             x += w
         }
-        let groups: [(Int, Int, Group)] = [(running, maxRunning, .running), (waiting, maxWaiting, .waiting), (done, maxDone, .done)]
+        let groups: [(Int, Int, Group)] = [(running, caps[0], .running), (waiting, caps[1], .waiting), (done, caps[2], .done)]
         for (count, cap, group) in groups where count > 0 {
             let shape: Item = switch (style, group) {
             case (.critters, .running): .runner
@@ -82,7 +83,28 @@ struct WingLayout: Equatable {
         width = x
     }
 
-    /// The widest this style's content gets: every group at its cap plus a long "+N".
+    /// At most this many figures in the wing; the rest show as a "+N" per group.
+    static let maxFigures = 10
+
+    /// How many figures each group gets: all of them while the total fits, else every non-empty
+    /// group keeps one and the rest go, one at a time, to the group with the most left out
+    /// (earlier groups win ties).
+    static func slots(_ counts: [Int]) -> [Int] {
+        var slots = counts.map { min(max($0, 0), 1) }
+        var left = maxFigures - slots.reduce(0, +)
+        while left > 0 {
+            var pick: Int?
+            for i in counts.indices where counts[i] > slots[i] {
+                if pick.map({ counts[i] - slots[i] > counts[$0] - slots[$0] }) ?? true { pick = i }
+            }
+            guard let i = pick else { break }
+            slots[i] += 1
+            left -= 1
+        }
+        return slots
+    }
+
+    /// The widest this style's content gets: every group shown plus a long "+N" on each.
     static func widest(_ style: WingStyle) -> CGFloat {
         WingLayout(style: style, running: 9999, waiting: 9999, done: 9999).width
     }
@@ -172,7 +194,7 @@ struct WingLayout: Equatable {
         if group == .waiting {
             // Stands still and glances left, then right, now and then.
             let glance = flip("transform.translation.x", [0, 0, 0, -1, -1, 0, 0, 0, 1, 1])
-            eyeLayer.add(loop([glance], duration: 4, offset: Double(index) * 1.3), forKey: "glance")
+            eyeLayer.add(loop([glance], duration: 4, offset: phase(index, 4)), forKey: "glance")
         } else if asleep {
             let z = CATextLayer()
             z.string = "z"
@@ -188,15 +210,15 @@ struct WingLayout: Equatable {
             let fade = CAKeyframeAnimation(keyPath: "opacity")
             fade.values = [0, 1, 0]
             fade.keyTimes = [0, 0.3, 1]
-            z.add(loop([drift, fade], duration: 2.2, offset: Double(index) * 0.8), forKey: "z")
+            z.add(loop([drift, fade], duration: 2.2, offset: phase(index, 2.2)), forKey: "z")
             root.addSublayer(z)
         } else {
             let a = shape(legsA, color)
             b.opacity = 0 // the walk animation swaps the pairs
             root.addSublayer(a)
-            // Two-frame walk: swap leg pairs and bob up a point on each step. Offsets stay under
-            // one step so no two of the (at most 3) walkers move in lockstep.
-            let step = 0.36, offset = Double(index) * 0.11
+            // Two-frame walk: swap leg pairs and bob up a point on each step. A step flips twice,
+            // so spread the phases over half of it, or pairs would flip together, mirrored.
+            let step = 0.36, offset = phase(index, step / 2)
             a.add(loop([flip("opacity", [1, 0])], duration: step, offset: offset), forKey: "walk")
             b.add(loop([flip("opacity", [0, 1])], duration: step, offset: offset), forKey: "walk")
             root.add(loop([flip("transform.translation.y", [0, 1])], duration: step, offset: offset), forKey: "hop")
@@ -232,14 +254,14 @@ struct WingLayout: Equatable {
         let breathe = CABasicAnimation(keyPath: "opacity")
         breathe.fromValue = 1
         breathe.toValue = 0.45
-        let anim = loop([breathe], duration: 1.4, offset: Double(index) * 0.35)
+        let anim = loop([breathe], duration: 1.4, offset: phase(index, 2.8))
         anim.autoreverses = true
         anim.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
         bar.add(anim, forKey: "breathe")
         return bar
     }
 
-    private static let tempos: [CFTimeInterval] = [0.45, 0.3, 0.58, 0.38, 0.5, 0.34, 0.62, 0.42]
+    private static let tempos: [CFTimeInterval] = [0.45, 0.3, 0.58, 0.38, 0.5, 0.34, 0.62, 0.42, 0.54, 0.32]
 
     private static func bar(x: CGFloat, height: CGFloat, index: Int) -> CALayer {
         let bar = CALayer()
@@ -250,11 +272,18 @@ struct WingLayout: Equatable {
         bounce.fromValue = 4
         bounce.toValue = barMax
         let tempo = tempos[index % tempos.count]
-        let anim = loop([bounce], duration: tempo, offset: Double(index) * 0.17)
+        let anim = loop([bounce], duration: tempo, offset: phase(index, 2 * tempo))
         anim.autoreverses = true
         anim.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
         bar.add(anim, forKey: "bounce")
         return bar
+    }
+
+    /// Where figure `index` starts in a cycle of `period` seconds: each of the (up to ten) figures
+    /// in a group gets its own tenth of the cycle, and the first few sit far apart.
+    private static func phase(_ index: Int, _ period: CFTimeInterval) -> CFTimeInterval {
+        let tenths = [0, 5, 2, 7, 4, 9, 1, 6, 3, 8]
+        return Double(tenths[index % tenths.count]) / 10 * period
     }
 
     /// Groups animations into one forever-repeating cycle, phase-shifted by `offset` seconds.

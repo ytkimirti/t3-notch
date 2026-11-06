@@ -171,7 +171,7 @@ struct NotchView: View {
     }
 }
 
-private struct DoneList: View {
+struct DoneList: View {
     @ObservedObject var store: Store
     let done: [AgentThread]
     let open: (AgentThread) -> Void

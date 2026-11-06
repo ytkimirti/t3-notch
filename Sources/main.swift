@@ -9,6 +9,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var style = WingStyle.critters
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        if let dir = argument("--demo") {
+            Demo.run(to: dir)
+            exit(0)
+        }
         let config: Config
         do { config = try Config.load() } catch {
             // Exit 0 so launchd (KeepAlive: SuccessfulExit false) doesn't restart it every 10s.
@@ -116,11 +120,18 @@ private func write(_ ctx: CGContext, _ path: String) {
     print("wrote \(path)")
 }
 
-let renderDir: String? = {
+func argument(_ flag: String) -> String? {
     let args = CommandLine.arguments
-    guard let i = args.firstIndex(of: "--render"), i + 1 < args.count else { return nil }
+    guard let i = args.firstIndex(of: flag), i + 1 < args.count else { return nil }
     return args[i + 1]
-}()
+}
+
+let renderDir = argument("--render")
+
+for flag in ["--render", "--demo"] where CommandLine.arguments.contains(flag) && argument(flag) == nil {
+    print("usage: t3notch [--render <dir> | --demo <dir>]")
+    exit(2)
+}
 
 MainActor.assumeIsolated {
     let app = NSApplication.shared

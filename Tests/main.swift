@@ -121,5 +121,17 @@ MainActor.assumeIsolated {
     check(store.waitingCount == 1 && store.runningCount == 0 && store.done.isEmpty, "store counts waiting")
 }
 
+// Wing figures: every agent while ten fit, else ten split across the groups.
+check(WingLayout.slots([3, 2, 4]) == [3, 2, 4], "ten or fewer all show")
+check(WingLayout.slots([10, 0, 0]) == [10, 0, 0], "ten in one group all show")
+check(WingLayout.slots([12, 0, 0]) == [10, 0, 0], "one group caps at ten")
+check(WingLayout.slots([20, 1, 0]) == [9, 1, 0], "small group keeps its figure")
+check(WingLayout.slots([8, 2, 3]) == [7, 1, 2], "overflow goes to the most left out")
+check(WingLayout.slots([9999, 9999, 9999]) == [4, 3, 3], "ties favour earlier groups")
+check(WingLayout.slots([0, 0, 0]) == [0, 0, 0], "nothing shows nothing")
+let crowded = WingLayout(style: .critters, running: 12, waiting: 0, done: 1)
+check(crowded.items.filter { if case .more = $0.item { return false }; return true }.count == 10, "layout draws ten figures")
+check(crowded.items.contains { $0.item == .more(3, .running) }, "layout counts the rest")
+
 print(failures == 0 ? "all tests passed" : "\(failures) failed")
 exit(failures == 0 ? 0 : 1)

@@ -1,7 +1,7 @@
 import Foundation
 
 struct Config: Decodable {
-    let url: String      // e.g. http://dev.tail1c1140.ts.net:3773 (ATS allows plain HTTP to ts.net only)
+    let url: String      // e.g. http://my-server.my-tailnet.ts.net:3773 (ATS allows plain HTTP to ts.net, IPs, and local hosts)
     let token: String    // `t3 auth session issue --scope orchestration:read --token-only`
     let style: String?   // "critters" (default) or "equalizer"
 
