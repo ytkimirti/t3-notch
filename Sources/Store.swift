@@ -25,6 +25,10 @@ struct AgentThread: Identifiable, Equatable {
     /// Rolls up to its ancestors (`pendingSubagentRequestsByThread`), which the Store sets below.
     let raisesSubagentRequest: Bool
     var hasSubagentRequest = false
+    /// Which configured server the thread lives on (index into `Config.allServers`).
+    var source = 0
+    /// Unique across servers, unlike `id`.
+    var key: String { "\(source)/\(id)" }
     private let ownAttention: Bool
 
     var needsAttention: Bool { ownAttention || hasSubagentRequest }
@@ -135,20 +139,69 @@ private func parseDate(_ value: Any?) -> Date? {
     return isoFractional.date(from: s) ?? isoPlain.date(from: s)
 }
 
+/// Threads from every configured T3 server, counted together.
 @MainActor
 final class Store: ObservableObject {
     @Published private(set) var runningCount = 0
     @Published private(set) var waitingCount = 0
     @Published private(set) var done: [AgentThread] = []
     @Published private(set) var projects: [String: String] = [:]
-    @Published var connected = false
-    @Published var environmentId: String?
-    private(set) var threads: [String: AgentThread] = [:] {
+    /// Servers with a live subscription.
+    @Published private(set) var connectedSources: Set<Int> = []
+    /// Each server's T3 environment, for `t3code://` links.
+    @Published var environments: [Int: String] = [:] {
         didSet { recompute() }
     }
+    /// Threads by server, then by id.
+    private(set) var sources: [Int: [String: AgentThread]] = [:] {
+        didSet { recompute() }
+    }
+    /// When each server dropped. A dropped server's threads keep counting this long, so a
+    /// reconnect doesn't flicker the wing; after that its agents are no longer known to be running.
+    private var disconnectedAt: [Int: Date] = [:]
+    var staleAfter: TimeInterval = 30
+    /// What counted when the last server dropped: shown, dimmed, until one is back. Nil until a
+    /// server first drops, so everything counts before any connection.
+    private var lastKnown: Set<Int>?
 
-    /// `threads` with subagent requests rolled up to every ancestor, as T3's sidebar does.
-    private func withSubagentRequests() -> [AgentThread] {
+    var connected: Bool { !connectedSources.isEmpty }
+    var threadCount: Int { sources.values.reduce(0) { $0 + $1.count } }
+
+    func setConnected(_ source: Int, _ isConnected: Bool) {
+        guard connectedSources.contains(source) != isConnected else { return }
+        let now = Date(), wasConnected = connected
+        if isConnected {
+            connectedSources.insert(source)
+            disconnectedAt[source] = nil
+            // Back from an outage (say, a wake): the others still down get a fresh grace, as
+            // their clocks ran while nothing could reconnect.
+            if !wasConnected { for s in lastKnown ?? [] where !connectedSources.contains(s) { disconnectedAt[s] = now } }
+        } else {
+            connectedSources.remove(source)
+            disconnectedAt[source] = now
+            if !connected { lastKnown = Set(countedSources(now: now, fallback: false)) }
+        }
+        recompute()
+    }
+
+    /// Servers whose threads count: connected ones and ones that dropped under `staleAfter` ago,
+    /// once per environment, preferring a connected copy (the same server configured twice counts
+    /// once). With none connected,
+    /// `lastKnown`, so the dimmed wing still shows the last known state.
+    private func countedSources(now: Date, fallback: Bool = true) -> [Int] {
+        var seen = Set<String>()
+        let order = sources.keys.sorted { (connectedSources.contains($0) ? 0 : 1, $0) < (connectedSources.contains($1) ? 0 : 1, $1) }
+        return order.filter { s in
+            let live = fallback && !connected ? lastKnown?.contains(s) ?? true
+                : connectedSources.contains(s) || disconnectedAt[s].map { now.timeIntervalSince($0) < staleAfter } ?? false
+            guard live else { return false }
+            guard let env = environments[s] else { return true }
+            return seen.insert(env).inserted
+        }
+    }
+
+    /// One server's threads with subagent requests rolled up to every ancestor, as T3's sidebar does.
+    private func withSubagentRequests(_ threads: [String: AgentThread]) -> [AgentThread] {
         var raised = Set<String>()
         for child in threads.values where child.raisesSubagentRequest {
             var seen: Set<String> = [child.id]
@@ -171,9 +224,10 @@ final class Store: ObservableObject {
     func projectName(_ id: String) -> String { projects[id] ?? "" }
 
     private func recompute() {
-        let all = withSubagentRequests()
-        let running = all.filter(\.isRunning).count
         let now = Date()
+        let counted = countedSources(now: now)
+        let all = counted.flatMap { withSubagentRequests(sources[$0] ?? [:]) }
+        let running = all.filter(\.isRunning).count
         let waiting = all.filter { $0.isWaiting(now: now) }.count
         let finished = all.filter { $0.isUnseenDone(now: now) }.sorted {
             ($0.latestRunCompletedAt ?? .distantPast) > ($1.latestRunCompletedAt ?? .distantPast)
@@ -182,10 +236,13 @@ final class Store: ObservableObject {
         if waiting != waitingCount { waitingCount = waiting }
         if finished != done { done = finished }
 
-        // The server sends nothing when a snooze runs out; recompute then ourselves.
+        // The server sends nothing when a snooze runs out, and nothing at all once it dropped;
+        // recompute then ourselves.
         snoozeTimer?.invalidate()
         snoozeTimer = nil
-        if let wake = threads.values.compactMap(\.snoozedUntil).filter({ $0 > now }).min() {
+        let snoozeEnds = counted.flatMap { (sources[$0] ?? [:]).values.compactMap(\.snoozedUntil) }
+        let staleAt = connected ? disconnectedAt.values.map { $0.addingTimeInterval(staleAfter) } : []
+        if let wake = (snoozeEnds + staleAt).filter({ $0 > now }).min() {
             snoozeTimer = Timer.scheduledTimer(withTimeInterval: wake.timeIntervalSince(now) + 1, repeats: false) { [weak self] _ in
                 MainActor.assumeIsolated { self?.recompute() }
             }
@@ -194,23 +251,28 @@ final class Store: ObservableObject {
 
     /// The first snapshot on a connection replaces everything. Later snapshots are project
     /// enrichment refreshes that carry only changed projects and no threads.
-    func apply(_ item: [String: Any], firstSnapshot: inout Bool) {
+    func apply(_ item: [String: Any], firstSnapshot: inout Bool, source: Int = 0) {
+        func parse(_ json: [String: Any]) -> AgentThread? {
+            guard var t = AgentThread(json) else { return nil }
+            t.source = source
+            return t
+        }
         switch item["kind"] as? String {
         case "snapshot":
             guard let snap = item["snapshot"] as? [String: Any] else { return }
             let threadList = snap["threads"] as? [[String: Any]] ?? []
             if firstSnapshot || !threadList.isEmpty {
                 var next: [String: AgentThread] = [:]
-                for t in threadList { if let t = AgentThread(t) { next[t.id] = t } }
-                threads = next
+                for t in threadList { if let t = parse(t) { next[t.id] = t } }
+                sources[source] = next
                 firstSnapshot = false
             }
             for p in snap["projects"] as? [[String: Any]] ?? [] { upsertProject(p) }
         case "thread.updated":
             guard let json = item["thread"] as? [String: Any], let id = json["id"] as? String else { return }
-            threads[id] = (item["location"] as? String) == "active" ? AgentThread(json) : nil
+            sources[source, default: [:]][id] = (item["location"] as? String) == "active" ? parse(json) : nil
         case "thread.removed":
-            if let id = item["threadId"] as? String { threads[id] = nil }
+            if let id = item["threadId"] as? String { sources[source]?[id] = nil }
         case "project.updated":
             if let p = item["project"] as? [String: Any] { upsertProject(p) }
         case "project.removed":

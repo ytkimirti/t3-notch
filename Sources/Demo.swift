@@ -79,7 +79,7 @@ enum Demo {
         let store = Store()
         var first = true
         store.apply(["kind": "snapshot", "snapshot": ["threads": threads, "projects": projects]], firstSnapshot: &first)
-        store.connected = true
+        store.setConnected(0, true)
         return store
     }
 

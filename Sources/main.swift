@@ -4,7 +4,7 @@ import SwiftUI
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     let store = Store()
-    var client: T3Client?
+    var clients: [T3Client] = []
     var controller: NotchController?
     var style = WingStyle.critters
 
@@ -20,9 +20,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             exit(0)
         }
         style = config.wingStyle
-        let client = T3Client(config: config, store: store)
-        self.client = client
-        client.start()
+        clients = config.allServers.enumerated().map { T3Client(server: $1, source: $0, store: store) }
+        clients.forEach { $0.start() }
 
         if let dir = renderDir {
             Task { await renderAndExit(to: dir) }
@@ -33,7 +32,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         controller.show()
         NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification,
                                                           object: nil, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { self?.client?.reconnectNow() }
+            MainActor.assumeIsolated { self?.clients.forEach { $0.reconnectNow() } }
         }
     }
 
@@ -41,10 +40,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// fake menu bar and notch plus wing strips for every style, print what it would show, and exit.
     /// Opens no window.
     private func renderAndExit(to dir: String) async {
-        for _ in 0..<100 where !(store.connected && store.environmentId != nil) {
+        let servers = clients.indices
+        for _ in 0..<100 where !servers.allSatisfy({ store.connectedSources.contains($0) && store.environments[$0] != nil }) {
             try? await Task.sleep(nanoseconds: 150_000_000)
         }
-        print("connected=\(store.connected) environment=\(store.environmentId ?? "-") threads=\(store.threads.count)")
+        for s in servers {
+            print("server \(s): connected=\(store.connectedSources.contains(s)) environment=\(store.environments[s] ?? "-")")
+        }
+        print("threads=\(store.threadCount)")
         print("running=\(store.runningCount) waiting=\(store.waitingCount) done=\(store.done.count)")
         for t in store.done { print("  \(t.isFailed ? "x" : "v") \(t.title) [\(store.projectName(t.projectId))]") }
 

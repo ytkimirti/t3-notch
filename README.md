@@ -33,7 +33,7 @@ when done.
 ## Requirements
 
 - An Apple silicon Mac on macOS 14 or later, with the Xcode command line tools (`xcode-select --install`).
-- A T3 Code server the Mac can reach. Plain HTTP works for Tailscale (`*.ts.net`) names, IP
+- One or more T3 Code servers the Mac can reach. Plain HTTP works for Tailscale (`*.ts.net`) names, IP
   addresses, and local hosts (`.local`); other domains need HTTPS.
 
 No notch? With no notched display connected (say, the lid closed on an external monitor), the
@@ -42,18 +42,29 @@ It hides over full-screen apps and an auto-hidden menu bar.
 
 ## Install
 
-On the machine running the T3 server, issue a read-only token:
+On each machine running a T3 server, issue a read-only token:
 
 ```sh
 t3 auth session issue --scope orchestration:read --ttl 3650d --label "notch" --token-only
 ```
 
+The T3 Code desktop app runs its own server on the Mac (`127.0.0.1:3773`), and its CLI lives at
+`~/.t3/bin/t3`.
+
 On the Mac, write `~/.config/t3-notch/config.json` and keep it private (`chmod 600`):
 
 ```json
-{ "url": "http://my-server.my-tailnet.ts.net:3773", "token": "<token>", "style": "critters" }
+{
+  "servers": [
+    { "url": "http://127.0.0.1:3773", "token": "<token from the Mac>" },
+    { "url": "http://my-server.my-tailnet.ts.net:3773", "token": "<token from the server>" }
+  ],
+  "style": "critters"
+}
 ```
 
+Agents from every server count together. With one server, top-level `"url"` and `"token"` work
+too. If a server drops, its agents keep counting for 30 seconds in case it comes right back.
 `style` is optional. Use the full hostname: URLSession upgrades a bare `http://dev` to HTTPS
 because `.dev` is HSTS-preloaded.
 

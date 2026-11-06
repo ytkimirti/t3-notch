@@ -185,7 +185,7 @@ struct DoneList: View {
                     .foregroundStyle(.white.opacity(0.4))
                     .frame(maxWidth: .infinity, minHeight: NotchState.rowHeight)
             } else {
-                ForEach(done.prefix(NotchState.maxRows)) { t in
+                ForEach(done.prefix(NotchState.maxRows), id: \.key) { t in
                     Row(thread: t, project: store.projectName(t.projectId), now: now) { open(t) }
                 }
                 if done.count > NotchState.maxRows {

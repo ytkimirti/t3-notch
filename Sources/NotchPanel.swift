@@ -158,7 +158,7 @@ final class NotchController {
     private func open(_ thread: AgentThread) {
         state.expanded = false
         panel.ignoresMouseEvents = true
-        if let env = store.environmentId, let url = URL(string: "t3code://threads/\(env)/\(thread.id)") {
+        if let env = store.environments[thread.source], let url = URL(string: "t3code://threads/\(env)/\(thread.id)") {
             NSWorkspace.shared.open(url)
         } else if let app = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.t3tools.t3code") {
             NSWorkspace.shared.openApplication(at: app, configuration: NSWorkspace.OpenConfiguration())

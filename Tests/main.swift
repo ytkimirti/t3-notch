@@ -121,6 +121,49 @@ MainActor.assumeIsolated {
     check(store.waitingCount == 1 && store.runningCount == 0 && store.done.isEmpty, "store counts waiting")
 }
 
+// Several servers: counted together, each keeps its own threads, a dropped one fades out.
+MainActor.assumeIsolated {
+    let store = Store()
+    var firstA = true, firstB = true
+    let run: [String: Any] = ["id": "same-id", "status": "running", "latestRunId": "r"]
+    let fin: [String: Any] = ["id": "f", "projectId": "p", "title": "F", "status": "completed", "latestRunId": "r",
+                              "latestRunCompletedAt": at(-5), "lastVisitedAt": at(-10)]
+    store.apply(["kind": "snapshot", "snapshot": ["threads": [run]]], firstSnapshot: &firstA, source: 0)
+    store.apply(["kind": "snapshot", "snapshot": ["threads": [run, fin]]], firstSnapshot: &firstB, source: 1)
+    store.setConnected(0, true); store.setConnected(1, true)
+    check(store.runningCount == 2 && store.done.count == 1, "servers add up, same id on each counts twice")
+    check(store.done.first?.source == 1, "done thread knows its server")
+    store.apply(["kind": "thread.removed", "threadId": "same-id"], firstSnapshot: &firstA, source: 0)
+    check(store.runningCount == 1, "removal stays on its server")
+    store.apply(["kind": "snapshot", "snapshot": ["threads": [run]]], firstSnapshot: &firstA, source: 0)
+    store.setConnected(1, false)
+    check(store.runningCount == 2 && store.connected, "a server that just dropped still counts")
+    store.staleAfter = 0.05
+    Thread.sleep(forTimeInterval: 0.1)
+    store.setConnected(0, false) // server 1 is past its grace by now; server 0 just dropped
+    check(store.runningCount == 1 && !store.connected, "with none connected, what last counted shows")
+    store.setConnected(0, true)
+    check(store.runningCount == 1 && store.done.isEmpty, "a server already stale stays out after an outage")
+    store.environments = [0: "env", 1: "env"]
+    store.setConnected(1, true)
+    check(store.runningCount == 1, "one server configured twice counts once")
+}
+MainActor.assumeIsolated {
+    // Both drop (sleep), one is back first (wake): the other gets a fresh grace.
+    let store = Store()
+    var a = true, b = true
+    let run: [String: Any] = ["id": "r", "status": "running", "latestRunId": "r"]
+    store.apply(["kind": "snapshot", "snapshot": ["threads": [run]]], firstSnapshot: &a, source: 0)
+    store.apply(["kind": "snapshot", "snapshot": ["threads": [run]]], firstSnapshot: &b, source: 1)
+    store.setConnected(0, true); store.setConnected(1, true)
+    store.staleAfter = 0.05
+    store.setConnected(0, false); store.setConnected(1, false)
+    check(store.runningCount == 2, "outage shows the last known state")
+    Thread.sleep(forTimeInterval: 0.1) // asleep longer than the grace
+    store.setConnected(1, true)
+    check(store.runningCount == 2, "the slower server keeps counting after a wake")
+}
+
 // Wing figures: every agent while ten fit, else ten split across the groups.
 check(WingLayout.slots([3, 2, 4]) == [3, 2, 4], "ten or fewer all show")
 check(WingLayout.slots([10, 0, 0]) == [10, 0, 0], "ten in one group all show")

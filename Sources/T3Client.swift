@@ -1,9 +1,23 @@
 import Foundation
 
 struct Config: Decodable {
-    let url: String      // e.g. http://my-server.my-tailnet.ts.net:3773 (ATS allows plain HTTP to ts.net, IPs, and local hosts)
-    let token: String    // `t3 auth session issue --scope orchestration:read --token-only`
+    struct Server: Decodable {
+        let url: String   // e.g. http://my-server.my-tailnet.ts.net:3773 (ATS allows plain HTTP to ts.net, IPs, and local hosts)
+        let token: String // `t3 auth session issue --scope orchestration:read --token-only`
+    }
+    /// One server: `url` and `token` at the top level. Several: `servers`. Both: all of them.
+    let url: String?
+    let token: String?
+    private let servers: [Server]?
     let style: String?   // "critters" (default) or "equalizer"
+
+    /// Every configured server, each URL once.
+    var allServers: [Server] {
+        var all: [Server] = []
+        if let url, let token { all.append(Server(url: url, token: token)) }
+        var seen = Set<String>()
+        return (all + (servers ?? [])).filter { seen.insert($0.url.trimmingCharacters(in: ["/"]).lowercased()).inserted }
+    }
 
     var wingStyle: WingStyle {
         guard let style else { return .critters }
@@ -15,7 +29,20 @@ struct Config: Decodable {
     static let path = NSString(string: "~/.config/t3-notch/config.json").expandingTildeInPath
 
     static func load() throws -> Config {
-        try JSONDecoder().decode(Config.self, from: Data(contentsOf: URL(fileURLWithPath: path)))
+        let config = try JSONDecoder().decode(Config.self, from: Data(contentsOf: URL(fileURLWithPath: path)))
+        if (config.url == nil) != (config.token == nil) { throw ConfigError.halfServer }
+        if config.allServers.isEmpty { throw ConfigError.noServers }
+        return config
+    }
+
+    enum ConfigError: Error, CustomStringConvertible {
+        case noServers, halfServer
+        var description: String {
+            switch self {
+            case .noServers: "no server: set \"url\" and \"token\", or \"servers\": [{\"url\", \"token\"}]"
+            case .halfServer: "top-level \"url\" and \"token\" go together"
+            }
+        }
     }
 }
 
@@ -23,7 +50,8 @@ struct Config: Decodable {
 /// The server pushes one snapshot, then a `thread.updated` per change, so nothing polls.
 @MainActor
 final class T3Client {
-    private let config: Config
+    private let config: Config.Server
+    private let source: Int
     private let store: Store
     private let session = URLSession(configuration: .ephemeral)
     private var task: URLSessionWebSocketTask?
@@ -32,8 +60,9 @@ final class T3Client {
     private var lastPong = Date()
     private var fetchingEnvironment = false
 
-    init(config: Config, store: Store) {
-        self.config = config
+    init(server: Config.Server, source: Int, store: Store) {
+        config = server
+        self.source = source
         self.store = store
     }
 
@@ -54,7 +83,7 @@ final class T3Client {
         generation += 1
         let gen = generation
         task?.cancel(with: .goingAway, reason: nil)
-        store.connected = false
+        store.setConnected(source, false)
 
         guard var comps = URLComponents(string: config.url) else { return }
         comps.scheme = comps.scheme == "https" ? "wss" : "ws"
@@ -79,7 +108,7 @@ final class T3Client {
         while gen == generation {
             let message: URLSessionWebSocketTask.Message
             do { message = try await task.receive() } catch {
-                if gen == generation { log("receive failed: \(error.localizedDescription)") }
+                if gen == generation { log("\(config.url): receive failed: \(error.localizedDescription)") }
                 break
             }
             // A socket we already replaced can still deliver a message; drop it.
@@ -95,17 +124,17 @@ final class T3Client {
             for m in messages {
                 switch m["_tag"] as? String {
                 case "Chunk":
-                    if !store.connected { store.connected = true }
+                    store.setConnected(source, true)
                     backoff = 1
-                    if store.environmentId == nil { Task { await fetchEnvironmentId() } }
-                    for v in m["values"] as? [[String: Any]] ?? [] { store.apply(v, firstSnapshot: &firstSnapshot) }
+                    if store.environments[source] == nil { Task { await fetchEnvironmentId() } }
+                    for v in m["values"] as? [[String: Any]] ?? [] { store.apply(v, firstSnapshot: &firstSnapshot, source: source) }
                     send(task, ["_tag": "Ack", "requestId": m["requestId"] ?? "1"])
                 case "Pong":
                     lastPong = Date()
                 case "Ping":
                     send(task, ["_tag": "Pong"])
                 case "Exit", "Defect", "ClientProtocolError":
-                    log("stream ended: \(String(data: data.prefix(300), encoding: .utf8) ?? "")")
+                    log("\(config.url): stream ended: \(String(data: data.prefix(300), encoding: .utf8) ?? "")")
                     task.cancel(with: .goingAway, reason: nil)
                 default:
                     break
@@ -113,7 +142,7 @@ final class T3Client {
             }
         }
         guard gen == generation else { return }
-        store.connected = false
+        store.setConnected(source, false)
         let delay = backoff
         backoff = min(backoff * 2, 30)
         try? await Task.sleep(nanoseconds: UInt64(delay * 1e9))
@@ -122,7 +151,7 @@ final class T3Client {
 
     private func heartbeat() {
         if Date().timeIntervalSince(lastPong) > 50 {
-            log("no pong for 50s, reconnecting")
+            log("\(config.url): no pong for 50s, reconnecting")
             reconnectNow()
             return
         }
@@ -136,16 +165,16 @@ final class T3Client {
     }
 
     private func fetchEnvironmentId() async {
-        guard store.environmentId == nil, !fetchingEnvironment,
+        guard store.environments[source] == nil, !fetchingEnvironment,
               let url = URL(string: config.url + "/.well-known/t3/environment") else { return }
         fetchingEnvironment = true
         defer { fetchingEnvironment = false }
         do {
             let (data, _) = try await session.data(from: url)
             let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
-            store.environmentId = json?["environmentId"] as? String
+            store.environments[source] = json?["environmentId"] as? String
         } catch {
-            log("environment lookup failed: \(error.localizedDescription)")
+            log("\(config.url): environment lookup failed: \(error.localizedDescription)")
         }
     }
 }
