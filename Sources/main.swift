@@ -66,7 +66,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         .frame(width: g.notchWidth, height: g.notchHeight)
                         .offset(x: g.notchMinX)
                 }
-                NotchView(store: store, state: state, open: { _ in })
+                NotchView(store: store, state: state, open: { _ in }, hide: {})
             }
             .frame(width: g.panelSize.width, height: g.panelSize.height)
             let renderer = ImageRenderer(content: view)

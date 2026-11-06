@@ -24,13 +24,25 @@ final class NotchController {
     private var exitTimer: Timer?
     private var leftAt: Date?
     private var enteredAt: Date?
+    private var hidden = false
+    private var unhideTimer: Timer?
     private var cancellables: Set<AnyCancellable> = []
 
-    /// Wide enough for the widest wing (and the list, which spans it symmetrically) on either side.
-    static func panelSize(notchWidth: CGFloat) -> CGSize {
+    static let panelHeight: CGFloat = 320
+
+    /// Without a notch: wide enough for the widest pill (and the list, which spans it
+    /// symmetrically) on either side.
+    static func pillPanelSize() -> CGSize {
         let wing = WingStyle.allCases.map { NotchState.wingWidth(content: WingLayout.widest($0)) }.max() ?? 0
-        let half = max(NotchState.expandedWidth / 2, notchWidth / 2 + wing) + 16
-        return CGSize(width: ceil(half * 2), height: 300)
+        let half = max(NotchState.expandedWidth / 2, wing / 2) + 16
+        return CGSize(width: ceil(half * 2), height: panelHeight)
+    }
+
+    /// With a notch: from the screen's left edge, where the wing may reach, to past the list's
+    /// right edge.
+    static func notchPanelSize(leftWidth: CGFloat, notchWidth: CGFloat) -> CGSize {
+        let right = max(NotchState.expandedWidth / 2 - notchWidth / 2, 0) + 16
+        return CGSize(width: ceil(leftWidth + notchWidth + right), height: panelHeight)
     }
 
     init(store: Store, style: WingStyle) {
@@ -47,7 +59,9 @@ final class NotchController {
         panel.backgroundColor = .clear
         panel.isOpaque = false
         panel.ignoresMouseEvents = true
-        let view = NotchView(store: store, state: state) { [weak self] thread in self?.open(thread) }
+        let view = NotchView(store: store, state: state,
+                             open: { [weak self] thread in self?.open(thread) },
+                             hide: { [weak self] in self?.hide() })
         let host = NotchHostingView(rootView: view)
         host.frame = NSRect(origin: .zero, size: state.geometry.panelSize)
         panel.contentView = host
@@ -96,7 +110,34 @@ final class NotchController {
         let notchScreenMinX = Self.notchScreenMinX(screen)
         panel.setFrame(NSRect(x: notchScreenMinX - g.notchMinX, y: screen.frame.maxY - g.panelSize.height,
                               width: g.panelSize.width, height: g.panelSize.height), display: true)
-        panel.orderFrontRegardless()
+        if hidden { panel.orderOut(nil) } else { panel.orderFrontRegardless() }
+    }
+
+    /// Off the menu bar for a minute, then back once the pointer isn't where the wing would be.
+    private func hide() {
+        hidden = true
+        state.expanded = false
+        enteredAt = nil
+        leftAt = nil
+        panel.ignoresMouseEvents = true
+        panel.orderOut(nil)
+        updateHover() // stops the hover poll
+        scheduleUnhide(after: 60)
+    }
+
+    private func scheduleUnhide(after seconds: TimeInterval) {
+        unhideTimer?.invalidate()
+        unhideTimer = Timer.scheduledTimer(withTimeInterval: seconds, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated { self?.unhide() }
+        }
+    }
+
+    private func unhide() {
+        unhideTimer = nil
+        // Coming back under the pointer would cover what it's about to click.
+        if isHot(NSEvent.mouseLocation) { return scheduleUnhide(after: 1) }
+        hidden = false
+        reposition()
     }
 
     private func toScreen(_ r: CGRect) -> NSRect {
@@ -177,6 +218,11 @@ final class NotchController {
         NSScreen.screens.first(where: hasNotch) ?? NSScreen.screens.first
     }
 
+    /// The menu bar left of the notch.
+    private static func leftAreaWidth(_ screen: NSScreen) -> CGFloat {
+        screen.auxiliaryTopLeftArea?.width ?? 0
+    }
+
     private static func notchSize(_ screen: NSScreen) -> CGSize {
         guard hasNotch(screen) else { return CGSize(width: 0, height: menuBarHeight(screen)) }
         let left = screen.auxiliaryTopLeftArea?.width ?? 0, right = screen.auxiliaryTopRightArea?.width ?? 0
@@ -190,14 +236,20 @@ final class NotchController {
 
     private static func notchScreenMinX(_ screen: NSScreen) -> CGFloat {
         guard hasNotch(screen) else { return screen.frame.midX }
-        return screen.frame.minX + (screen.auxiliaryTopLeftArea?.width ?? 0)
+        return screen.frame.minX + leftAreaWidth(screen)
     }
 
     static func geometry(for screen: NSScreen?) -> NotchGeometry {
-        let size = screen.map(notchSize) ?? CGSize(width: 185, height: 32)
-        let panel = Self.panelSize(notchWidth: size.width)
-        return NotchGeometry(panelSize: panel, notchMinX: (panel.width - size.width) / 2,
-                             notchWidth: size.width, notchHeight: size.height,
-                             hasNotch: screen.map(hasNotch) ?? true)
+        guard let screen, hasNotch(screen) else {
+            let height = screen.map(menuBarHeight) ?? 32
+            let panel = pillPanelSize()
+            return NotchGeometry(panelSize: panel, notchMinX: panel.width / 2, notchWidth: 0,
+                                 notchHeight: height, hasNotch: false)
+        }
+        let size = notchSize(screen), left = leftAreaWidth(screen)
+        // The wing may run to the screen's left edge, short of its outer ear.
+        let room = left - 6 - NotchState.wingLead - NotchState.wingTrail
+        return NotchGeometry(panelSize: notchPanelSize(leftWidth: left, notchWidth: size.width), notchMinX: left,
+                             notchWidth: size.width, notchHeight: size.height, wingRoom: room)
     }
 }

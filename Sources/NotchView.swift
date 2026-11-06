@@ -10,6 +10,9 @@ struct NotchGeometry: Equatable {
     /// False on a display without a notch (lid closed): `notchWidth` is zero and the wing is a
     /// pill centered in the menu bar.
     var hasNotch = true
+    /// How wide the wing's figures may get (with a notch, the menu bar left of it). Nil keeps the
+    /// pill's ten-figure cap.
+    var wingRoom: CGFloat?
 
     var notchMidX: CGFloat { notchMinX + notchWidth / 2 }
 }
@@ -23,19 +26,30 @@ final class NotchState: ObservableObject {
     static let rowHeight: CGFloat = 26
     static let maxRows = 8
     static let moreHeight: CGFloat = 20
+    static let footerHeight: CGFloat = 24
     static let expandedWidth: CGFloat = 380
 
     init(geometry: NotchGeometry) { self.geometry = geometry }
 
     private var layoutCache: WingLayout?
 
+    private var layoutCacheRoom: CGFloat?
+
     /// Cached: hover hit-testing asks on every mouse move, and "+N" layout measures text.
     func wingLayout(running: Int, waiting: Int, done: Int) -> WingLayout {
-        if let c = layoutCache, c.style == style, c.running == running, c.waiting == waiting, c.done == done { return c }
-        let layout = WingLayout(style: style, running: running, waiting: waiting, done: done)
+        let room = geometry.wingRoom
+        if let c = layoutCache, layoutCacheRoom == room, c.style == style, c.running == running,
+           c.waiting == waiting, c.done == done { return c }
+        let layout = room.map {
+            WingLayout.fitting(style: style, running: running, waiting: waiting, done: done, maxWidth: $0)
+        } ?? WingLayout(style: style, running: running, waiting: waiting, done: done)
         layoutCache = layout
+        layoutCacheRoom = room
         return layout
     }
+
+    /// How far left of the notch the list may reach; a longer wing runs on past it.
+    static let listReach: CGFloat = 300
 
     /// Width of the black wing; zero when there is nothing to show.
     func wingWidth(running: Int, waiting: Int, done: Int) -> CGFloat {
@@ -68,12 +82,12 @@ final class NotchState: ObservableObject {
         let g = geometry
         let wing = wingWidth(running: running, waiting: waiting, done: done)
         if !expanded { return collapsedRect(running: running, waiting: waiting, done: done) }
-        // Reaches left over the wing but no further right than usual, so status items stay visible.
+        // Reaches left over a short wing but no further right than usual, so status items stay visible.
         let half = Self.expandedWidth / 2
-        let minX = min(g.notchMidX - half, wingMinX(wing))
+        let minX = min(g.notchMidX - half, max(wingMinX(wing), g.notchMinX - Self.listReach))
         let rows = max(1, min(done, Self.maxRows))
         let more = done > Self.maxRows ? Self.moreHeight : 0
-        let height = g.notchHeight + 6 + CGFloat(rows) * Self.rowHeight + more + 8
+        let height = g.notchHeight + 6 + CGFloat(rows) * Self.rowHeight + more + Self.footerHeight + 4
         return CGRect(x: minX, y: 0, width: g.notchMidX + half - minX, height: height)
     }
 }
@@ -126,6 +140,7 @@ struct NotchView: View {
     @ObservedObject var store: Store
     @ObservedObject var state: NotchState
     var open: (AgentThread) -> Void
+    var hide: () -> Void
 
     var body: some View {
         let running = store.runningCount
@@ -136,7 +151,16 @@ struct NotchView: View {
         let wing = state.wingWidth(running: running, waiting: waiting, done: done.count)
         let visible = state.expanded || wing > 0
 
+        let strip = state.collapsedRect(running: running, waiting: waiting, done: done.count)
+
         ZStack(alignment: .topLeading) {
+            // The wing itself, for when it runs past the list's left edge.
+            NotchShape(leftExtension: 5, rightExtension: g.hasNotch ? 0 : 5, bottomRadius: 9)
+                .fill(Color.black)
+                .frame(width: strip.width, height: strip.height)
+                .offset(x: strip.minX)
+                .opacity(wing > 0 ? 1 : 0)
+
             NotchShape(leftExtension: state.expanded ? 10 : 5,
                        rightExtension: state.expanded ? 10 : (g.hasNotch ? 0 : 5),
                        bottomRadius: state.expanded ? 18 : 9)
@@ -158,7 +182,7 @@ struct NotchView: View {
             .opacity(wing > 0 ? (store.connected ? 1 : 0.35) : 0)
 
             if state.expanded {
-                DoneList(store: store, done: done, open: open, now: Date())
+                DoneList(store: store, done: done, open: open, hide: hide, now: Date())
                     .frame(width: rect.width - 20)
                     .offset(x: rect.minX + 10, y: g.notchHeight + 6)
                     .transition(.opacity)
@@ -175,9 +199,19 @@ struct DoneList: View {
     @ObservedObject var store: Store
     let done: [AgentThread]
     let open: (AgentThread) -> Void
+    let hide: () -> Void
     let now: Date
 
     var body: some View {
+        VStack(spacing: 0) {
+            list
+            HideButton(action: hide)
+                .frame(maxWidth: .infinity, alignment: .trailing)
+                .frame(height: NotchState.footerHeight)
+        }
+    }
+
+    @ViewBuilder private var list: some View {
         VStack(spacing: 0) {
             if done.isEmpty {
                 Text(store.connected ? "Nothing finished" : "Not connected to T3")
@@ -196,6 +230,29 @@ struct DoneList: View {
                 }
             }
         }
+    }
+}
+
+/// Takes the notch off the menu bar for a minute, so the menu items under the wing can be used.
+private struct HideButton: View {
+    let action: () -> Void
+    @State private var hover = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 4) {
+                Image(systemName: "eye.slash")
+                Text("Hide for a minute")
+            }
+            .font(.system(size: 10, weight: .medium))
+            .foregroundStyle(.white.opacity(hover ? 0.85 : 0.38))
+            .padding(.horizontal, 8)
+            .frame(height: 20)
+            .background(RoundedRectangle(cornerRadius: 6).fill(.white.opacity(hover ? 0.1 : 0)))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hover = $0 }
     }
 }
 

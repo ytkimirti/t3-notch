@@ -176,5 +176,15 @@ let crowded = WingLayout(style: .critters, running: 12, waiting: 0, done: 1)
 check(crowded.items.filter { if case .more = $0.item { return false }; return true }.count == 10, "layout draws ten figures")
 check(crowded.items.contains { $0.item == .more(3, .running) }, "layout counts the rest")
 
+// With a notch, the wing takes as many figures as fit the room left of it.
+let roomy = WingLayout.fitting(style: .critters, running: 30, waiting: 0, done: 2, maxWidth: 600)
+check(roomy.width <= 600, "fitted wing stays inside its room")
+check(roomy.items.filter { if case .more = $0.item { return false }; return true }.count > 25, "a wide room shows far more than ten")
+let all = WingLayout.fitting(style: .equalizer, running: 40, waiting: 3, done: 5, maxWidth: 600)
+check(!all.items.contains { if case .more = $0.item { return true }; return false }, "everything that fits shows without a +N")
+let tight = WingLayout.fitting(style: .critters, running: 20, waiting: 0, done: 0, maxWidth: 100)
+check(tight.width <= 100 && tight.items.contains { if case .more = $0.item { return true }; return false }, "a tight room overflows to +N")
+check(WingLayout.fitting(style: .critters, running: 0, waiting: 0, done: 0, maxWidth: 500).width == 0, "nothing to fit is empty")
+
 print(failures == 0 ? "all tests passed" : "\(failures) failed")
 exit(failures == 0 ? 0 : 1)

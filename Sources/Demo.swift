@@ -149,7 +149,7 @@ enum Demo {
         if let shown = beats.first(where: \.expanded) {
             state.expanded = true
             let open = state.shapeRect(running: shown.running, waiting: shown.waiting, done: shown.done)
-            let content = DoneList(store: store, done: store.done, open: { _ in }, now: Date())
+            let content = DoneList(store: store, done: store.done, open: { _ in }, hide: {}, now: Date())
                 .frame(width: open.width - 20)
                 .environment(\.colorScheme, .dark)
             let renderer = ImageRenderer(content: content)
@@ -234,7 +234,7 @@ enum Demo {
                 clipShape.path = shape.path
                 if built.map({ $0 != (beat.running, beat.waiting, beat.done) }) ?? true {
                     built = (beat.running, beat.waiting, beat.done)
-                    let layout = WingLayout(style: style, running: beat.running, waiting: beat.waiting, done: beat.done)
+                    let layout = state.wingLayout(running: beat.running, waiting: beat.waiting, done: beat.done)
                     wing.bounds = CGRect(x: 0, y: 0, width: layout.width, height: notch.height)
                     layout.build(into: wing, height: notch.height)
                 }

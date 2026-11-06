@@ -45,7 +45,7 @@ struct WingLayout: Equatable {
     static let barMax: CGFloat = 16
     static let moreFont = NSFont.systemFont(ofSize: 10, weight: .bold)
 
-    init(style: WingStyle, running: Int, waiting: Int, done: Int) {
+    init(style: WingStyle, running: Int, waiting: Int, done: Int, maxFigures: Int = Self.maxFigures) {
         self.style = style
         self.running = running
         self.waiting = waiting
@@ -54,7 +54,7 @@ struct WingLayout: Equatable {
         case .critters: (Self.critterSize.width, 4)
         case .equalizer: (Self.barWidth, 3)
         }
-        let caps = Self.slots([running, waiting, done])
+        let caps = Self.slots([running, waiting, done], max: maxFigures)
         var items: [Placed] = []
         var x: CGFloat = 0
         func add(_ item: Item, _ w: CGFloat, gap: CGFloat) {
@@ -83,15 +83,28 @@ struct WingLayout: Equatable {
         width = x
     }
 
-    /// At most this many figures in the wing; the rest show as a "+N" per group.
+    /// At most this many figures in a pill without a notch; the rest show as a "+N" per group.
     static let maxFigures = 10
 
-    /// How many figures each group gets: all of them while the total fits, else every non-empty
-    /// group keeps one and the rest go, one at a time, to the group with the most left out
-    /// (earlier groups win ties).
-    static func slots(_ counts: [Int]) -> [Int] {
+    /// The layout with as many figures as fit in `maxWidth` points. Every group with agents keeps
+    /// one figure, so a very narrow room can still overflow.
+    static func fitting(style: WingStyle, running: Int, waiting: Int, done: Int, maxWidth: CGFloat) -> WingLayout {
+        let total = running + waiting + done
+        let stride: CGFloat = style == .critters ? critterSize.width + 4 : barWidth + 3
+        var n = min(total, Int(max(maxWidth, 0) / stride) + 1)
+        while true {
+            let layout = WingLayout(style: style, running: running, waiting: waiting, done: done, maxFigures: n)
+            if layout.width <= maxWidth || n <= 0 { return layout }
+            n -= 1
+        }
+    }
+
+    /// How many figures each group gets: all of them while the total fits in `max`, else every
+    /// non-empty group keeps one and the rest go, one at a time, to the group with the most left
+    /// out (earlier groups win ties).
+    static func slots(_ counts: [Int], max limit: Int = maxFigures) -> [Int] {
         var slots = counts.map { min(max($0, 0), 1) }
-        var left = maxFigures - slots.reduce(0, +)
+        var left = limit - slots.reduce(0, +)
         while left > 0 {
             var pick: Int?
             for i in counts.indices where counts[i] > slots[i] {
@@ -104,7 +117,7 @@ struct WingLayout: Equatable {
         return slots
     }
 
-    /// The widest this style's content gets: every group shown plus a long "+N" on each.
+    /// The widest this style's pill content gets: every group shown plus a long "+N" on each.
     static func widest(_ style: WingStyle) -> CGFloat {
         WingLayout(style: style, running: 9999, waiting: 9999, done: 9999).width
     }
@@ -279,11 +292,13 @@ struct WingLayout: Equatable {
         return bar
     }
 
-    /// Where figure `index` starts in a cycle of `period` seconds: each of the (up to ten) figures
-    /// in a group gets its own tenth of the cycle, and the first few sit far apart.
+    /// Where figure `index` starts in a cycle of `period` seconds: each of ten neighbouring figures
+    /// in a group gets its own tenth of the cycle, and the first few sit far apart. Each further
+    /// run of ten shifts by a hundredth, so a long wing doesn't repeat every ten figures.
     private static func phase(_ index: Int, _ period: CFTimeInterval) -> CFTimeInterval {
         let tenths = [0, 5, 2, 7, 4, 9, 1, 6, 3, 8]
-        return Double(tenths[index % tenths.count]) / 10 * period
+        let run = Double(tenths[(index / 10) % tenths.count]) / 10
+        return (Double(tenths[index % tenths.count]) + run) / 10 * period
     }
 
     /// Groups animations into one forever-repeating cycle, phase-shifted by `offset` seconds.

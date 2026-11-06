@@ -12,11 +12,14 @@ A black wing grows out of the notch's left edge with one figure per agent:
 - **Grey** while it waits on another thread or on background work.
 - **Green** once it finished and you haven't looked yet.
 
-Up to ten figures show at once. Past that, every group with agents keeps at least one figure,
-and a group with more than it shows adds a `+N` for the rest.
+The wing can grow all the way to the screen's left edge, over the app menus. When more agents
+run than fit, every group with agents keeps at least one figure, and a group with more than it
+shows adds a `+N` for the rest.
 
 Hover the notch to list the finished threads (red: failed, amber: hit a usage limit), and click
-one to open it in T3 Code. Nothing to show means no wing: the notch looks like a notch.
+one to open it in T3 Code. Nothing to show means no wing: the notch looks like a notch. Need the
+menus under the wing? **Hide for a minute** at the bottom of the list takes it away for 60
+seconds; it comes back once the pointer isn't where the wing would be.
 
 ## Styles
 
@@ -37,7 +40,8 @@ when done.
   addresses, and local hosts (`.local`); other domains need HTTPS.
 
 No notch? With no notched display connected (say, the lid closed on an external monitor), the
-wing sits as a pill at the top center of the main display's menu bar, no wider than its figures.
+wing sits as a pill at the top center of the main display's menu bar, no wider than its figures
+(up to ten).
 It hides over full-screen apps and an auto-hidden menu bar.
 
 ## Install
