@@ -5,8 +5,8 @@ import SwiftUI
 /// How the left wing shows agents: one shape per agent, blue while working, grey while waiting,
 /// orange when woken from a snooze, green when done, dim green once you've read it.
 enum WingStyle: String, CaseIterable {
-    /// Pixel creatures: workers trot in place, waiting and woken ones stand and glance around,
-    /// finished ones doze until you open them, then lie dim.
+    /// Pixel creatures: workers trot in place, waiting ones glance around and tap their feet,
+    /// woken ones bounce with a "!", finished ones sleep until you open them, then doze dimly.
     case critters
     /// Bars: workers bounce like audio levels, waiting and woken ones idle at half height,
     /// finished ones rest as short green bars, dim once read.
@@ -91,7 +91,7 @@ struct WingLayout: Equatable {
             if count > cap {
                 let text = "+\(count - cap)"
                 let w = ceil(NSAttributedString(string: text, attributes: [.font: Self.moreFont]).size().width)
-                add(.more(count - cap, group), w, gap: 3)
+                add(.more(count - cap, group), w, gap: group == .woke ? 5 : 3) // clear of the last "!"
             }
         }
         self.items = items
@@ -316,7 +316,7 @@ struct WingLayout: Equatable {
                 a.add(loop([keys("opacity", [0, 1, 0, 1, 0], times)], duration: 5, offset: phase(index, 5)), forKey: "tap")
                 b.add(loop([keys("opacity", [1, 0, 1, 0, 1], times)], duration: 5, offset: phase(index, 5)), forKey: "tap")
             } else {
-                // Bounces twice with a "!" over its head, asking for a look.
+                // Bounces twice with a "!" beside its head, asking for a look.
                 let period = 2.6, offset = phase(index, period)
                 root.add(loop([keys("transform.translation.y", [0, 2, 0, 2, 0], [0, 0.7, 0.77, 0.84, 0.91, 1])],
                               duration: period, offset: offset), forKey: "hop")

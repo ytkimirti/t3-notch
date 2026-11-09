@@ -30,10 +30,10 @@ enum Demo {
         Beat(running: 3, waiting: 1, done: 2, seconds: 1.6),
         Beat(running: 8, waiting: 2, done: 3, seconds: 2.2),
         Beat(running: 4, waiting: 1, done: 3, read: 2, seconds: 1.4),
-        Beat(running: 4, waiting: 1, woke: 1, done: 3, read: 2, seconds: 2.6),
-        Beat(running: 4, waiting: 1, woke: 1, done: 3, read: 2, seconds: 0.5, hover: true),
-        Beat(running: 4, waiting: 1, woke: 1, done: 3, read: 2, seconds: 2.8, hover: true, expanded: true),
-        Beat(running: 4, waiting: 1, woke: 1, done: 3, read: 2, seconds: 0.8),
+        Beat(running: 3, waiting: 1, woke: 1, done: 3, read: 2, seconds: 2.6),
+        Beat(running: 3, waiting: 1, woke: 1, done: 3, read: 2, seconds: 0.5, hover: true),
+        Beat(running: 3, waiting: 1, woke: 1, done: 3, read: 2, seconds: 2.8, hover: true, expanded: true),
+        Beat(running: 3, waiting: 1, woke: 1, done: 3, read: 2, seconds: 0.8),
     ]
 
     static func run(to dir: String) {
