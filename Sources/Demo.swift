@@ -10,7 +10,7 @@ import UniformTypeIdentifiers
 @MainActor
 enum Demo {
     struct Beat {
-        var running = 0, waiting = 0, done = 0
+        var running = 0, waiting = 0, woke = 0, done = 0, read = 0
         var seconds: Double
         /// The cursor rests on the notch.
         var hover = false
@@ -21,18 +21,19 @@ enum Demo {
     static let fps = 25.0
     static let scale: CGFloat = 2
 
-    /// Agents start, one waits on its subagents, they finish, more than ten pile up, then a hover
-    /// opens the list.
+    /// Agents start, one waits on its subagents, they finish, more than ten pile up, a snoozed one
+    /// wakes, then a hover opens the list.
     static let story: [Beat] = [
         Beat(running: 1, seconds: 1.2),
         Beat(running: 3, seconds: 1.4),
         Beat(running: 4, waiting: 1, seconds: 1.4),
         Beat(running: 3, waiting: 1, done: 2, seconds: 1.6),
         Beat(running: 8, waiting: 2, done: 3, seconds: 2.2),
-        Beat(running: 4, waiting: 1, done: 5, seconds: 1.4),
-        Beat(running: 4, waiting: 1, done: 5, seconds: 0.5, hover: true),
-        Beat(running: 4, waiting: 1, done: 5, seconds: 2.8, hover: true, expanded: true),
-        Beat(running: 4, waiting: 1, done: 5, seconds: 0.8),
+        Beat(running: 4, waiting: 1, done: 3, read: 2, seconds: 1.4),
+        Beat(running: 4, waiting: 1, woke: 1, done: 3, read: 2, seconds: 2.6),
+        Beat(running: 4, waiting: 1, woke: 1, done: 3, read: 2, seconds: 0.5, hover: true),
+        Beat(running: 4, waiting: 1, woke: 1, done: 3, read: 2, seconds: 2.8, hover: true, expanded: true),
+        Beat(running: 4, waiting: 1, woke: 1, done: 3, read: 2, seconds: 0.8),
     ]
 
     static func run(to dir: String) {
@@ -86,7 +87,8 @@ enum Demo {
     private static func render(style: WingStyle, beats: [Beat], store: Store, to dir: String) -> Int {
         let notch = CGSize(width: 185, height: 32)
         let widestWing = beats.map {
-            NotchState.wingWidth(content: WingLayout(style: style, running: $0.running, waiting: $0.waiting, done: $0.done).width)
+            NotchState.wingWidth(content: WingLayout(style: style, running: $0.running, waiting: $0.waiting, woke: $0.woke, done: $0.done,
+                                                 read: $0.read).width)
         }.max() ?? 0
         let notchMinX = (20 + widestWing).rounded()
         let hovers = beats.contains(where: \.hover)
@@ -148,8 +150,9 @@ enum Demo {
         scene.addSublayer(hardware)
         if let shown = beats.first(where: \.expanded) {
             state.expanded = true
-            let open = state.shapeRect(running: shown.running, waiting: shown.waiting, done: shown.done)
-            let content = DoneList(store: store, done: store.done, open: { _ in }, hide: {}, now: Date())
+            let open = state.shapeRect(running: shown.running, waiting: shown.waiting, woke: shown.woke, done: shown.done,
+                                       read: shown.read)
+            let content = DoneList(store: store, done: store.finished, open: { _ in }, hide: {}, now: Date())
                 .frame(width: open.width - 20)
                 .environment(\.colorScheme, .dark)
             let renderer = ImageRenderer(content: content)
@@ -198,7 +201,7 @@ enum Demo {
         // Eased toward their targets each frame, standing in for the app's SwiftUI springs.
         var left = notchMinX, right = notchMinX + notch.width, bottom = notch.height, wingWidth: CGFloat = 0
         var ear: CGFloat = 5, rightEar: CGFloat = 0, radius: CGFloat = 9, listOpacity: Float = 0
-        var built: (Int, Int, Int)?
+        var built: [Int]?
         var cursorAt = rest
         let dt = 1 / fps
         let ease = { (tau: Double) in CGFloat(1 - exp(-dt / tau)) }
@@ -209,8 +212,10 @@ enum Demo {
             let from = cursorAt, to = beat.hover ? onNotch : rest
             let steps = Int((beat.seconds * fps).rounded())
             for step in 0..<steps {
-                let target = state.shapeRect(running: beat.running, waiting: beat.waiting, done: beat.done)
-                let targetWing = state.wingWidth(running: beat.running, waiting: beat.waiting, done: beat.done)
+                let target = state.shapeRect(running: beat.running, waiting: beat.waiting, woke: beat.woke, done: beat.done,
+                                             read: beat.read)
+                let targetWing = state.wingWidth(running: beat.running, waiting: beat.waiting, woke: beat.woke, done: beat.done,
+                                                read: beat.read)
                 let k = ease(0.06)
                 left += (target.minX - left) * k
                 right += (target.maxX - right) * k
@@ -232,9 +237,11 @@ enum Demo {
                     .path(in: rect).cgPath
                 shape.path = path.copy(using: &flip)
                 clipShape.path = shape.path
-                if built.map({ $0 != (beat.running, beat.waiting, beat.done) }) ?? true {
-                    built = (beat.running, beat.waiting, beat.done)
-                    let layout = state.wingLayout(running: beat.running, waiting: beat.waiting, done: beat.done)
+                let counts = [beat.running, beat.waiting, beat.woke, beat.done, beat.read]
+                if built != counts {
+                    built = counts
+                    let layout = state.wingLayout(running: beat.running, waiting: beat.waiting, woke: beat.woke, done: beat.done,
+                                                  read: beat.read)
                     wing.bounds = CGRect(x: 0, y: 0, width: layout.width, height: notch.height)
                     layout.build(into: wing, height: notch.height)
                 }

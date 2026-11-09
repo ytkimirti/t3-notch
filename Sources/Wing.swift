@@ -203,70 +203,158 @@ struct WingLayout: Equatable {
     private static let body = ["..XXXX..", ".XXXXXX.", ".XoXXoX.", "XXXXXXXX", ".XXXXXX."]
 
     /// An 8x6 pixel creature. Rows are listed top-down; layers are y-up.
+    ///
+    /// - Running: trots with a hop, kicks up dust behind it, and blinks now and then.
+    /// - Waiting: glances left and right, blinks, and taps its feet impatiently.
+    /// - Woke: glances and blinks, and every few seconds bounces twice with a "!".
+    /// - Done: sleeps, breathing slowly, while a small and a big "z" float up.
+    /// - Read: dozes dimly, breathing slower still.
     private static func critter(x: CGFloat, height: CGFloat, group: Group, index: Int) -> CALayer {
         let size = critterSize
         let root = CALayer()
         root.frame = CGRect(x: x, y: ((height - size.height) / 2).rounded(), width: size.width, height: size.height)
         let color = Self.color(group)
-        // Woken ones stand and glance around like waiting ones; read ones doze without the z.
         let asleep = group == .done || group == .read
-        let looks = group == .waiting || group == .woke
         func pixel(_ col: Int, _ row: Int, _ path: CGMutablePath, dy: CGFloat = 0, h: CGFloat = px) {
             path.addRect(CGRect(x: CGFloat(col) * px, y: CGFloat(5 - row) * px + dy, width: px, height: h))
         }
-        // A runner's eyes are holes in its skin. A waiter's sit on solid skin so they can shift.
-        let skin = CGMutablePath(), eyes = CGMutablePath()
+
+        // The body (skin and eyes) sits apart from the legs, so it can rise with a breath.
+        let bodyLayer = CALayer()
+        bodyLayer.frame = CGRect(origin: .zero, size: size)
+        root.addSublayer(bodyLayer)
+        let skin = CGMutablePath(), open = CGMutablePath(), lids = CGMutablePath()
         for (row, line) in body.enumerated() {
             for (col, c) in line.enumerated() where c != "." {
-                if c == "o" && group == .running { pixel(col, row, eyes) } else { pixel(col, row, skin) }
-                if c == "o" && looks { pixel(col, row, eyes) }
-                // Closed eyes: a thin dark lid across the lower half of the eye pixel.
-                if c == "o" && asleep { pixel(col, row, eyes, h: px / 2) }
+                pixel(col, row, skin)
+                if c == "o" {
+                    pixel(col, row, open)
+                    // Closed eyes: a thin dark lid across the lower half of the eye pixel.
+                    pixel(col, row, lids, h: px / 2)
+                }
             }
         }
-        root.addSublayer(shape(skin, color))
-        let eyeLayer = shape(eyes, .black)
-        root.addSublayer(eyeLayer)
+        bodyLayer.addSublayer(shape(skin, color))
+        // Open and closed eyes share a layer, so a glance moves both.
+        let eyes = CALayer()
+        eyes.frame = CGRect(origin: .zero, size: size)
+        bodyLayer.addSublayer(eyes)
+        let openEyes = shape(open, .black), closedEyes = shape(lids, .black)
+        eyes.addSublayer(openEyes)
+        eyes.addSublayer(closedEyes)
 
         let legsA = CGMutablePath(), legsB = CGMutablePath()
         pixel(1, 5, legsA); pixel(6, 5, legsA)
         pixel(2, 5, legsB); pixel(5, 5, legsB)
-        let b = shape(legsB, color)
+        let a = shape(legsA, color), b = shape(legsB, color)
+        root.addSublayer(a)
         root.addSublayer(b)
 
-        if looks {
-            // Stands still and glances left, then right, now and then.
-            let glance = flip("transform.translation.x", [0, 0, 0, -1, -1, 0, 0, 0, 1, 1])
-            eyeLayer.add(loop([glance], duration: 4, offset: phase(index, 4)), forKey: "glance")
-        } else if group == .done {
-            let z = CATextLayer()
-            z.string = "z"
-            z.font = NSFont.monospacedSystemFont(ofSize: 7, weight: .bold)
-            z.fontSize = 7
-            z.foregroundColor = green.cgColor
-            z.contentsScale = 2
-            z.frame = CGRect(x: size.width - 3, y: size.height - 4, width: 6, height: 9)
-            z.opacity = 0
-            let drift = CABasicAnimation(keyPath: "transform.translation")
-            drift.fromValue = NSValue(size: .zero)
-            drift.toValue = NSValue(size: CGSize(width: 4, height: 7))
-            let fade = CAKeyframeAnimation(keyPath: "opacity")
-            fade.values = [0, 1, 0]
-            fade.keyTimes = [0, 0.3, 1]
-            z.add(loop([drift, fade], duration: 2.2, offset: phase(index, 2.2)), forKey: "z")
-            root.addSublayer(z)
-        } else if !asleep {
-            let a = shape(legsA, color)
-            b.opacity = 0 // the walk animation swaps the pairs
-            root.addSublayer(a)
+        if asleep {
+            openEyes.opacity = 0
+            a.opacity = 0
+            // Breathing: the body rises a point and settles, legs on the ground.
+            let period: CFTimeInterval = group == .done ? 2.2 : 3.4
+            bodyLayer.add(loop([flip("transform.translation.y", [0, 1])], duration: period, offset: phase(index, period)),
+                          forKey: "breathe")
+            if group == .done {
+                root.addSublayer(z(at: CGPoint(x: size.width - 3, y: size.height - 4), size: 6, period: 2.2,
+                                   offset: phase(index, 2.2)))
+                root.addSublayer(z(at: CGPoint(x: size.width - 3, y: size.height - 4), size: 8, period: 2.2,
+                                   offset: phase(index, 2.2) + 1.1))
+            }
+            return root
+        }
+
+        // Awake ones blink every few seconds, each on its own beat.
+        let blinkPeriod = 3.4 + Double(index % 3) * 0.6
+        closedEyes.opacity = 0
+        openEyes.add(loop([keys("opacity", [1, 0, 1], [0, 0.95, 0.985, 1])], duration: blinkPeriod,
+                          offset: phase(index, blinkPeriod)), forKey: "blink")
+        closedEyes.add(loop([keys("opacity", [0, 1, 0], [0, 0.95, 0.985, 1])], duration: blinkPeriod,
+                            offset: phase(index, blinkPeriod)), forKey: "blink")
+
+        switch group {
+        case .running:
             // Two-frame walk: swap leg pairs and bob up a point on each step. A step flips twice,
             // so spread the phases over half of it, or pairs would flip together, mirrored.
             let step = 0.36, offset = phase(index, step / 2)
+            b.opacity = 0
             a.add(loop([flip("opacity", [1, 0])], duration: step, offset: offset), forKey: "walk")
             b.add(loop([flip("opacity", [0, 1])], duration: step, offset: offset), forKey: "walk")
             root.add(loop([flip("transform.translation.y", [0, 1])], duration: step, offset: offset), forKey: "hop")
+            // A puff of dust behind its feet on every other step.
+            let dust = CALayer()
+            dust.frame = CGRect(x: -1, y: 0.5, width: 1, height: 1)
+            dust.backgroundColor = NSColor(white: 0.75, alpha: 1).cgColor
+            dust.opacity = 0
+            let drift = CABasicAnimation(keyPath: "transform.translation")
+            drift.fromValue = NSValue(size: .zero)
+            drift.toValue = NSValue(size: CGSize(width: -4, height: 1.5))
+            let fade = CAKeyframeAnimation(keyPath: "opacity")
+            fade.values = [0.55, 0]
+            dust.add(loop([drift, fade], duration: step * 2, offset: offset), forKey: "dust")
+            root.addSublayer(dust)
+        case .waiting, .woke:
+            a.opacity = 0
+            // Glances left, then right, now and then.
+            let glance = flip("transform.translation.x", [0, 0, 0, -1, -1, 0, 0, 0, 1, 1])
+            eyes.add(loop([glance], duration: 4, offset: phase(index, 4)), forKey: "glance")
+            if group == .waiting {
+                // Taps its feet: a quick shuffle every five seconds.
+                let times: [NSNumber] = [0, 0.8, 0.84, 0.88, 0.92, 1]
+                a.add(loop([keys("opacity", [0, 1, 0, 1, 0], times)], duration: 5, offset: phase(index, 5)), forKey: "tap")
+                b.add(loop([keys("opacity", [1, 0, 1, 0, 1], times)], duration: 5, offset: phase(index, 5)), forKey: "tap")
+            } else {
+                // Bounces twice with a "!" over its head, asking for a look.
+                let period = 2.6, offset = phase(index, period)
+                root.add(loop([keys("transform.translation.y", [0, 2, 0, 2, 0], [0, 0.7, 0.77, 0.84, 0.91, 1])],
+                              duration: period, offset: offset), forKey: "hop")
+                let bang = CATextLayer()
+                bang.string = "!"
+                bang.font = NSFont.monospacedSystemFont(ofSize: 8, weight: .heavy)
+                bang.fontSize = 8
+                bang.foregroundColor = color.cgColor
+                bang.contentsScale = 2
+                bang.frame = CGRect(x: size.width - 1, y: size.height - 3, width: 6, height: 10)
+                bang.opacity = 0
+                bang.add(loop([keys("opacity", [0, 1, 0], [0, 0.66, 0.96, 1])], duration: period, offset: offset),
+                         forKey: "bang")
+                root.addSublayer(bang)
+            }
+        case .done, .read:
+            break
         }
         return root
+    }
+
+    /// A "z" that drifts up and to the right as it fades in and out.
+    private static func z(at origin: CGPoint, size: CGFloat, period: CFTimeInterval, offset: CFTimeInterval) -> CALayer {
+        let z = CATextLayer()
+        z.string = "z"
+        z.font = NSFont.monospacedSystemFont(ofSize: size, weight: .bold)
+        z.fontSize = size
+        z.foregroundColor = green.cgColor
+        z.contentsScale = 2
+        z.frame = CGRect(x: origin.x, y: origin.y, width: size, height: size + 3)
+        z.opacity = 0
+        let drift = CABasicAnimation(keyPath: "transform.translation")
+        drift.fromValue = NSValue(size: .zero)
+        drift.toValue = NSValue(size: CGSize(width: 4, height: 7))
+        let fade = CAKeyframeAnimation(keyPath: "opacity")
+        fade.values = [0, 1, 0]
+        fade.keyTimes = [0, 0.3, 1]
+        z.add(loop([drift, fade], duration: period, offset: offset), forKey: "z")
+        return z
+    }
+
+    /// Jumps between values at the given key times (one more than values, from 0 to 1).
+    private static func keys(_ keyPath: String, _ values: [Double], _ times: [NSNumber]) -> CAKeyframeAnimation {
+        let k = CAKeyframeAnimation(keyPath: keyPath)
+        k.values = values
+        k.keyTimes = times
+        k.calculationMode = .discrete
+        return k
     }
 
     private static func shape(_ path: CGPath, _ color: NSColor) -> CAShapeLayer {
