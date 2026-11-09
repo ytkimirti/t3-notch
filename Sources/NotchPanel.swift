@@ -212,10 +212,21 @@ final class NotchController {
         screen.auxiliaryTopLeftArea != nil && screen.auxiliaryTopRightArea != nil
     }
 
-    /// The built-in display with a notch if it's awake, else (lid closed) the primary display,
-    /// where a zero-width "notch" at the top center stands in for it.
+    private static func isBuiltIn(_ screen: NSScreen) -> Bool {
+        guard let id = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID
+        else { return false }
+        return CGDisplayIsBuiltin(id) != 0
+    }
+
+    /// An external display if one is connected (the primary one if it's external, else one with a
+    /// menu bar of its own), where a zero-width "notch" at the top center stands in for the real
+    /// one; else the built-in display.
     static func targetScreen() -> NSScreen? {
-        NSScreen.screens.first(where: hasNotch) ?? NSScreen.screens.first
+        let screens = NSScreen.screens
+        let external = screens.filter { !isBuiltIn($0) }
+        if let primary = screens.first, external.contains(primary) { return primary }
+        return external.first(where: { menuBarHeight($0) > 0 }) ?? external.first
+            ?? screens.first(where: hasNotch) ?? screens.first
     }
 
     /// The menu bar left of the notch.

@@ -39,8 +39,9 @@ when done.
 - One or more T3 Code servers the Mac can reach. Plain HTTP works for Tailscale (`*.ts.net`) names, IP
   addresses, and local hosts (`.local`); other domains need HTTPS.
 
-No notch? With no notched display connected (say, the lid closed on an external monitor), the
-wing sits as a pill at the top center of the main display's menu bar, no wider than its figures.
+External display, or no notch? With an external display connected, the wing shows only there
+(the main display if it's external), as a pill at the top center of its menu bar, no wider than
+its figures.
 A long pill grows left, all the way to the screen's edge if it needs to.
 It hides over full-screen apps and an auto-hidden menu bar.
 
