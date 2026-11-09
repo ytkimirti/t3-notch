@@ -3,7 +3,7 @@
 Your [T3 Code](https://github.com/ytkimirti/t3code) agents, living in the MacBook notch.
 
 <p align="center">
-  <img src="docs/critters.gif" width="704" alt="Pixel critters in a black wing grown out of the notch: blue ones trot and kick up dust while their agents work, a grey one glances around and taps its feet while it waits, an orange one nudges with a ! after waking from a snooze, green ones doze under floating z's once finished, and dim ones breathe quietly once read. Hovering the notch opens a list of the threads.">
+  <img src="docs/critters.gif" width="704" alt="Pixel critters in a black wing grown out of the notch: blue ones trot and kick up dust while their agents work, a grey one glances around and taps its feet while it waits, an orange one nudges now and then after waking from a snooze, green ones doze under floating z's once finished, and dim ones breathe quietly once read. Hovering the notch opens a list of the threads.">
 </p>
 
 A black wing grows out of the notch's left edge with one figure per agent:
@@ -26,7 +26,7 @@ away for 60 seconds; it comes back once the pointer isn't where the wing would b
 ## Styles
 
 `critters` (the default): pixel creatures that blink now and then. They trot and kick up dust while
-working, glance around and tap their feet while waiting, nudge with a "!" when just woken, sleep
+working, glance around and tap their feet while waiting, nudge now and then when just woken, sleep
 under floating z's when done, and doze dimly once read.
 
 `equalizer`: bars that bounce while working, idle at half height while waiting or just woken,
