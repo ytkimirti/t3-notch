@@ -30,7 +30,7 @@ final class NotchController {
 
     static let panelHeight: CGFloat = 320
 
-    /// Without a notch: wide enough for the widest pill (and the list, which spans it
+    /// Without a screen: wide enough for the widest ten-figure pill (and the list, which spans it
     /// symmetrically) on either side.
     static func pillPanelSize() -> CGSize {
         let wing = WingStyle.allCases.map { NotchState.wingWidth(content: WingLayout.widest($0)) }.max() ?? 0
@@ -240,11 +240,17 @@ final class NotchController {
     }
 
     static func geometry(for screen: NSScreen?) -> NotchGeometry {
-        guard let screen, hasNotch(screen) else {
-            let height = screen.map(menuBarHeight) ?? 32
+        guard let screen else {
             let panel = pillPanelSize()
             return NotchGeometry(panelSize: panel, notchMinX: panel.width / 2, notchWidth: 0,
-                                 notchHeight: height, hasNotch: false)
+                                 notchHeight: 32, hasNotch: false)
+        }
+        guard hasNotch(screen) else {
+            // A zero-width "notch" at the top center; the pill may run to the screen's left edge.
+            let left = screen.frame.width / 2
+            let room = left + NotchState.pillReach - 12 - NotchState.wingLead - NotchState.wingTrail
+            return NotchGeometry(panelSize: notchPanelSize(leftWidth: left, notchWidth: 0), notchMinX: left,
+                                 notchWidth: 0, notchHeight: menuBarHeight(screen), hasNotch: false, wingRoom: room)
         }
         let size = notchSize(screen), left = leftAreaWidth(screen)
         // The wing may run to the screen's left edge, short of its outer ear.

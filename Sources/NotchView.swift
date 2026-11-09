@@ -10,8 +10,8 @@ struct NotchGeometry: Equatable {
     /// False on a display without a notch (lid closed): `notchWidth` is zero and the wing is a
     /// pill centered in the menu bar.
     var hasNotch = true
-    /// How wide the wing's figures may get (with a notch, the menu bar left of it). Nil keeps the
-    /// pill's ten-figure cap.
+    /// How wide the wing's figures may get: the menu bar left of the notch, or without one, from
+    /// the screen's left edge to the pill's furthest right edge. Nil keeps a ten-figure cap.
     var wingRoom: CGFloat?
 
     var notchMidX: CGFloat { notchMinX + notchWidth / 2 }
@@ -64,10 +64,15 @@ final class NotchState: ObservableObject {
         content == 0 ? 0 : wingLead + content + wingTrail
     }
 
-    /// The wing's left edge: grown out of the notch's left edge, or centered without a notch.
+    /// How far right of center the pill may reach without a notch, so status items stay visible.
+    static let pillReach: CGFloat = expandedWidth / 2
+
+    /// The wing's left edge: grown out of the notch's left edge, or without a notch, centered
+    /// until it reaches `pillReach`, then growing left only.
     func wingMinX(_ wing: CGFloat) -> CGFloat {
         let g = geometry
-        return g.hasNotch ? g.notchMinX - wing : (g.notchMidX - wing / 2).rounded()
+        if g.hasNotch { return g.notchMinX - wing }
+        return min(g.notchMidX - wing / 2, g.notchMidX + Self.pillReach - wing).rounded()
     }
 
     /// The notch plus its wing, in panel-local coordinates.

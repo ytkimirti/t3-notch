@@ -40,8 +40,8 @@ when done.
   addresses, and local hosts (`.local`); other domains need HTTPS.
 
 No notch? With no notched display connected (say, the lid closed on an external monitor), the
-wing sits as a pill at the top center of the main display's menu bar, no wider than its figures
-(up to ten).
+wing sits as a pill at the top center of the main display's menu bar, no wider than its figures.
+A long pill grows left, all the way to the screen's edge if it needs to.
 It hides over full-screen apps and an auto-hidden menu bar.
 
 ## Install
