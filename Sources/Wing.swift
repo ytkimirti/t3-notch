@@ -6,7 +6,7 @@ import SwiftUI
 /// orange when woken from a snooze, green when done, dim green once you've read it.
 enum WingStyle: String, CaseIterable {
     /// Pixel creatures: workers trot in place, waiting ones glance around and tap their feet,
-    /// woken ones bounce with a "!", finished ones sleep until you open them, then doze dimly.
+    /// woken ones nudge with a "!", finished ones sleep until you open them, then doze dimly.
     case critters
     /// Bars: workers bounce like audio levels, waiting and woken ones idle at half height,
     /// finished ones rest as short green bars, dim once read.
@@ -207,7 +207,7 @@ struct WingLayout: Equatable {
     ///
     /// - Running: trots with a hop, kicks up dust behind it, and blinks now and then.
     /// - Waiting: glances left and right, blinks, and taps its feet impatiently.
-    /// - Woke: glances and blinks, and every few seconds bounces twice with a "!".
+    /// - Woke: glances and blinks, and now and then nudges up a point with a "!".
     /// - Done: sleeps, breathing slowly, while a small and a big "z" float up.
     /// - Read: dozes dimly, breathing slower still.
     private static func critter(x: CGFloat, height: CGFloat, group: Group, index: Int) -> CALayer {
@@ -316,9 +316,9 @@ struct WingLayout: Equatable {
                 a.add(loop([keys("opacity", [0, 1, 0, 1, 0], times)], duration: 5, offset: phase(index, 5)), forKey: "tap")
                 b.add(loop([keys("opacity", [1, 0, 1, 0, 1], times)], duration: 5, offset: phase(index, 5)), forKey: "tap")
             } else {
-                // Bounces twice with a "!" beside its head, asking for a look.
-                let period = 2.6, offset = phase(index, period)
-                root.add(loop([keys("transform.translation.y", [0, 2, 0, 2, 0], [0, 0.7, 0.77, 0.84, 0.91, 1])],
+                // Nudges up a point once in a while with a "!" beside its head, asking for a look.
+                let period = 4.0, offset = phase(index, period)
+                root.add(loop([keys("transform.translation.y", [0, 1, 0], [0, 0.8, 0.88, 1])],
                               duration: period, offset: offset), forKey: "hop")
                 let bang = CATextLayer()
                 bang.string = "!"
@@ -329,7 +329,7 @@ struct WingLayout: Equatable {
                 // Beside the head, so a short menu bar doesn't cut it off.
                 bang.frame = CGRect(x: size.width - 1, y: size.height - 7, width: 6, height: 10)
                 bang.opacity = 0
-                bang.add(loop([keys("opacity", [0, 1, 0], [0, 0.66, 0.96, 1])], duration: period, offset: offset),
+                bang.add(loop([keys("opacity", [0, 1, 0], [0, 0.76, 0.96, 1])], duration: period, offset: offset),
                          forKey: "bang")
                 root.addSublayer(bang)
             }
