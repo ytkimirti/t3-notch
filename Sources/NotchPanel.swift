@@ -28,7 +28,7 @@ final class NotchController {
     private var unhideTimer: Timer?
     private var cancellables: Set<AnyCancellable> = []
 
-    static let panelHeight: CGFloat = 320
+    static let panelHeight: CGFloat = 420
 
     /// Without a screen: wide enough for the widest ten-figure pill (and the list, which spans it
     /// symmetrically) on either side.
@@ -148,13 +148,14 @@ final class NotchController {
     /// The notch and wing, plus, when expanded, the list below the menu bar. The expanded shape's
     /// top strip beside the notch is left out so menu bar items there stay clickable.
     private func isHot(_ p: NSPoint) -> Bool {
-        let running = store.runningCount, waiting = store.waitingCount, done = store.done.count
-        var top = toScreen(state.collapsedRect(running: running, waiting: waiting, done: done))
+        let running = store.runningCount, waiting = store.waitingCount
+        let woke = store.woke.count, done = store.done.count, read = store.read.count
+        var top = toScreen(state.collapsedRect(running: running, waiting: waiting, woke: woke, done: done, read: read))
         top.size.height += 4 // past the screen edge, so the topmost pixel row counts
         if top.contains(p) { return true }
         guard state.expanded else { return false }
         let g = state.geometry
-        var below = state.shapeRect(running: running, waiting: waiting, done: done)
+        var below = state.shapeRect(running: running, waiting: waiting, woke: woke, done: done, read: read)
         below.origin.y = g.notchHeight
         below.size.height -= g.notchHeight
         return toScreen(below).contains(p)

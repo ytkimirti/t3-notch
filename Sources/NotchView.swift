@@ -24,7 +24,7 @@ final class NotchState: ObservableObject {
     var style: WingStyle = .critters // read from config once at launch
 
     static let rowHeight: CGFloat = 26
-    static let maxRows = 8
+    static let maxRows = 12
     static let moreHeight: CGFloat = 20
     static let footerHeight: CGFloat = 24
     static let expandedWidth: CGFloat = 380
@@ -36,13 +36,14 @@ final class NotchState: ObservableObject {
     private var layoutCacheRoom: CGFloat?
 
     /// Cached: hover hit-testing asks on every mouse move, and "+N" layout measures text.
-    func wingLayout(running: Int, waiting: Int, done: Int) -> WingLayout {
+    func wingLayout(running: Int, waiting: Int, woke: Int = 0, done: Int, read: Int = 0) -> WingLayout {
         let room = geometry.wingRoom
         if let c = layoutCache, layoutCacheRoom == room, c.style == style, c.running == running,
-           c.waiting == waiting, c.done == done { return c }
+           c.waiting == waiting, c.woke == woke, c.done == done, c.read == read { return c }
         let layout = room.map {
-            WingLayout.fitting(style: style, running: running, waiting: waiting, done: done, maxWidth: $0)
-        } ?? WingLayout(style: style, running: running, waiting: waiting, done: done)
+            WingLayout.fitting(style: style, running: running, waiting: waiting, woke: woke, done: done, read: read,
+                               maxWidth: $0)
+        } ?? WingLayout(style: style, running: running, waiting: waiting, woke: woke, done: done, read: read)
         layoutCache = layout
         layoutCacheRoom = room
         return layout
@@ -52,8 +53,8 @@ final class NotchState: ObservableObject {
     static let listReach: CGFloat = 300
 
     /// Width of the black wing; zero when there is nothing to show.
-    func wingWidth(running: Int, waiting: Int, done: Int) -> CGFloat {
-        Self.wingWidth(content: wingLayout(running: running, waiting: waiting, done: done).width)
+    func wingWidth(running: Int, waiting: Int, woke: Int = 0, done: Int, read: Int = 0) -> CGFloat {
+        Self.wingWidth(content: wingLayout(running: running, waiting: waiting, woke: woke, done: done, read: read).width)
     }
 
     /// Space before the wing's first figure and after its last (where the notch begins, if any).
@@ -76,22 +77,24 @@ final class NotchState: ObservableObject {
     }
 
     /// The notch plus its wing, in panel-local coordinates.
-    func collapsedRect(running: Int, waiting: Int, done: Int) -> CGRect {
+    func collapsedRect(running: Int, waiting: Int, woke: Int = 0, done: Int, read: Int = 0) -> CGRect {
         let g = geometry
-        let wing = wingWidth(running: running, waiting: waiting, done: done)
+        let wing = wingWidth(running: running, waiting: waiting, woke: woke, done: done, read: read)
         return CGRect(x: wingMinX(wing), y: 0, width: g.notchWidth + wing, height: g.notchHeight)
     }
 
     /// The black shape's frame in panel-local coordinates.
-    func shapeRect(running: Int, waiting: Int, done: Int) -> CGRect {
+    /// The list holds the woken, done, and read threads.
+    func shapeRect(running: Int, waiting: Int, woke: Int = 0, done: Int, read: Int = 0) -> CGRect {
         let g = geometry
-        let wing = wingWidth(running: running, waiting: waiting, done: done)
-        if !expanded { return collapsedRect(running: running, waiting: waiting, done: done) }
+        let wing = wingWidth(running: running, waiting: waiting, woke: woke, done: done, read: read)
+        if !expanded { return collapsedRect(running: running, waiting: waiting, woke: woke, done: done, read: read) }
+        let listed = woke + done + read
         // Reaches left over a short wing but no further right than usual, so status items stay visible.
         let half = Self.expandedWidth / 2
         let minX = min(g.notchMidX - half, max(wingMinX(wing), g.notchMinX - Self.listReach))
-        let rows = max(1, min(done, Self.maxRows))
-        let more = done > Self.maxRows ? Self.moreHeight : 0
+        let rows = max(1, min(listed, Self.maxRows))
+        let more = listed > Self.maxRows ? Self.moreHeight : 0
         let height = g.notchHeight + 6 + CGFloat(rows) * Self.rowHeight + more + Self.footerHeight + 4
         return CGRect(x: minX, y: 0, width: g.notchMidX + half - minX, height: height)
     }
@@ -150,13 +153,13 @@ struct NotchView: View {
     var body: some View {
         let running = store.runningCount
         let waiting = store.waitingCount
-        let done = store.done
+        let woke = store.woke.count, done = store.done.count, read = store.read.count
         let g = state.geometry
-        let rect = state.shapeRect(running: running, waiting: waiting, done: done.count)
-        let wing = state.wingWidth(running: running, waiting: waiting, done: done.count)
+        let rect = state.shapeRect(running: running, waiting: waiting, woke: woke, done: done, read: read)
+        let wing = state.wingWidth(running: running, waiting: waiting, woke: woke, done: done, read: read)
         let visible = state.expanded || wing > 0
 
-        let strip = state.collapsedRect(running: running, waiting: waiting, done: done.count)
+        let strip = state.collapsedRect(running: running, waiting: waiting, woke: woke, done: done, read: read)
 
         ZStack(alignment: .topLeading) {
             // The wing itself, for when it runs past the list's left edge.
@@ -177,7 +180,8 @@ struct NotchView: View {
             Group {
                 // ImageRenderer can't draw AppKit views; `--render` composites the layers itself.
                 if renderDir == nil {
-                    WingView(layout: state.wingLayout(running: running, waiting: waiting, done: done.count), height: g.notchHeight)
+                    WingView(layout: state.wingLayout(running: running, waiting: waiting, woke: woke, done: done, read: read),
+                             height: g.notchHeight)
                 } else {
                     Color.clear
                 }
@@ -187,7 +191,7 @@ struct NotchView: View {
             .opacity(wing > 0 ? (store.connected ? 1 : 0.35) : 0)
 
             if state.expanded {
-                DoneList(store: store, done: done, open: open, hide: hide, now: Date())
+                DoneList(store: store, done: store.finished, open: open, hide: hide, now: Date())
                     .frame(width: rect.width - 20)
                     .offset(x: rect.minX + 10, y: g.notchHeight + 6)
                     .transition(.opacity)
@@ -225,7 +229,8 @@ struct DoneList: View {
                     .frame(maxWidth: .infinity, minHeight: NotchState.rowHeight)
             } else {
                 ForEach(done.prefix(NotchState.maxRows), id: \.key) { t in
-                    Row(thread: t, project: store.projectName(t.projectId), now: now) { open(t) }
+                    Row(thread: t, kind: store.woke.contains(t) ? .woke : store.read.contains(t) ? .read : .done,
+                        project: store.projectName(t.projectId), now: now) { open(t) }
                 }
                 if done.count > NotchState.maxRows {
                     Text("+\(done.count - NotchState.maxRows) more")
@@ -262,7 +267,9 @@ private struct HideButton: View {
 }
 
 private struct Row: View {
+    enum Kind { case woke, done, read }
     let thread: AgentThread
+    let kind: Kind
     let project: String
     let now: Date
     let action: () -> Void
@@ -276,13 +283,13 @@ private struct Row: View {
                     .frame(width: 6, height: 6)
                 Text(thread.title)
                     .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.92))
+                    .foregroundStyle(.white.opacity(kind == .read ? 0.6 : 0.92))
                     .lineLimit(1)
                 Spacer(minLength: 6)
                 Text(project)
                     .lineLimit(1)
                     .frame(maxWidth: 96, alignment: .trailing)
-                Text(age(thread.latestRunCompletedAt))
+                Text(age(kind == .woke ? thread.wokeAt(now: now) : thread.latestRunCompletedAt))
                     .monospacedDigit()
                     .frame(width: 26, alignment: .trailing)
             }
@@ -298,9 +305,16 @@ private struct Row: View {
     }
 
     // T3's sidebar: red for failed, amber for "Limited" (failed on a usage limit), green for done.
+    // Woken ones are orange, like their figures; read ones fade.
     private var dotColor: Color {
-        if !thread.isFailed { return Color(red: 0.35, green: 0.85, blue: 0.5) }
-        return thread.isUsageLimited ? Color(red: 1, green: 0.75, blue: 0.3) : Color(red: 1, green: 0.4, blue: 0.4)
+        let color = if kind == .woke {
+            Color(red: 1, green: 0.62, blue: 0.25)
+        } else if !thread.isFailed {
+            Color(red: 0.35, green: 0.85, blue: 0.5)
+        } else {
+            thread.isUsageLimited ? Color(red: 1, green: 0.75, blue: 0.3) : Color(red: 1, green: 0.4, blue: 0.4)
+        }
+        return kind == .read ? color.opacity(0.4) : color
     }
 
     private func age(_ date: Date?) -> String {

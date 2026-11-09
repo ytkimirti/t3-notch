@@ -101,11 +101,43 @@ struct AgentThread: Identifiable, Equatable {
     /// effectiveSnoozed: hidden until snoozedUntil, unless it raised a hand meanwhile.
     func isSnoozed(now: Date) -> Bool {
         guard let snoozedUntil, snoozedUntil > now else { return false }
-        if needsAttention || hasRuntimeRequest { return false }
-        guard isFailed else { return true }
-        guard let snoozedAt else { return false }
-        guard let failedAt = latestRunCompletedAt else { return true }
-        return failedAt <= snoozedAt
+        return !raisedHandWhileSnoozed
+    }
+
+    /// threadRaisedHandWhileSnoozed: a request for the user, or a failure since the snooze.
+    private var raisedHandWhileSnoozed: Bool {
+        if needsAttention || hasRuntimeRequest { return true }
+        guard isFailed else { return false }
+        guard let snoozedAt else { return true }
+        guard let failedAt = latestRunCompletedAt else { return false }
+        return failedAt > snoozedAt
+    }
+
+    /// threadWokeAt: when a snooze ended, by its timer or by a raised hand. T3 dates a hand
+    /// raised by a request at the runtime's last update, which the shell here lacks; the snooze
+    /// start stands in (such a thread needs attention, so the wing doesn't show it anyway).
+    func wokeAt(now: Date) -> Date? {
+        guard let snoozedUntil else { return nil }
+        if raisedHandWhileSnoozed {
+            if isFailed, let failedAt = latestRunCompletedAt, snoozedAt.map({ failedAt > $0 }) ?? true { return failedAt }
+            return snoozedAt
+        }
+        return snoozedUntil <= now ? snoozedUntil : nil
+    }
+
+    /// The sidebar row's "Woke" badge (SidebarThreadRow `isWoke`): woken since you last opened it,
+    /// and not settled. Only finished ones: a woken thread at work shows as working.
+    func isWoke(now: Date) -> Bool {
+        if isSubagent || isShelved || ![.ready, .failed].contains(sidebarStatus) { return false }
+        guard let woke = wokeAt(now: now) else { return false }
+        return lastVisitedAt.map { $0 < woke } ?? true
+    }
+
+    /// A finished thread in the sidebar's active section that you've already seen: it waits for
+    /// you to settle it or write again.
+    func isRead(now: Date) -> Bool {
+        if isSubagent || isShelved || isSnoozed(now: now) || ![.ready, .failed].contains(sidebarStatus) { return false }
+        return !isUnseenDone(now: now) && !isWoke(now: now)
     }
 
     /// A sidebar row showing "done", or a failure you haven't opened since it failed. The sidebar
@@ -145,6 +177,12 @@ final class Store: ObservableObject {
     @Published private(set) var runningCount = 0
     @Published private(set) var waitingCount = 0
     @Published private(set) var done: [AgentThread] = []
+    /// Woken from a snooze since you last opened them.
+    @Published private(set) var woke: [AgentThread] = []
+    /// Finished and seen, still in the sidebar's active section.
+    @Published private(set) var read: [AgentThread] = []
+    /// Everything the list shows, in the wing's order: woken, done, read.
+    var finished: [AgentThread] { woke + done + read }
     @Published private(set) var projects: [String: String] = [:]
     /// Servers with a live subscription.
     @Published private(set) var connectedSources: Set<Int> = []
@@ -229,12 +267,19 @@ final class Store: ObservableObject {
         let all = counted.flatMap { withSubagentRequests(sources[$0] ?? [:]) }
         let running = all.filter(\.isRunning).count
         let waiting = all.filter { $0.isWaiting(now: now) }.count
-        let finished = all.filter { $0.isUnseenDone(now: now) }.sorted {
-            ($0.latestRunCompletedAt ?? .distantPast) > ($1.latestRunCompletedAt ?? .distantPast)
+        func latestFirst(_ a: AgentThread, _ b: AgentThread) -> Bool {
+            (a.latestRunCompletedAt ?? .distantPast) > (b.latestRunCompletedAt ?? .distantPast)
         }
+        let wokeNow = all.filter { $0.isWoke(now: now) }.sorted {
+            ($0.wokeAt(now: now) ?? .distantPast) > ($1.wokeAt(now: now) ?? .distantPast)
+        }
+        let unseen = all.filter { $0.isUnseenDone(now: now) && !$0.isWoke(now: now) }.sorted(by: latestFirst)
+        let seen = all.filter { $0.isRead(now: now) }.sorted(by: latestFirst)
         if running != runningCount { runningCount = running }
         if waiting != waitingCount { waitingCount = waiting }
-        if finished != done { done = finished }
+        if wokeNow != woke { woke = wokeNow }
+        if unseen != done { done = unseen }
+        if seen != read { read = seen }
 
         // The server sends nothing when a snooze runs out, and nothing at all once it dropped;
         // recompute then ourselves.

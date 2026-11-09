@@ -48,8 +48,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             print("server \(s): connected=\(store.connectedSources.contains(s)) environment=\(store.environments[s] ?? "-")")
         }
         print("threads=\(store.threadCount)")
-        print("running=\(store.runningCount) waiting=\(store.waitingCount) done=\(store.done.count)")
-        for t in store.done { print("  \(t.isFailed ? "x" : "v") \(t.title) [\(store.projectName(t.projectId))]") }
+        print("running=\(store.runningCount) waiting=\(store.waitingCount) woke=\(store.woke.count) done=\(store.done.count) read=\(store.read.count)")
+        for t in store.finished {
+            let mark = store.woke.contains(t) ? "!" : store.read.contains(t) ? "." : t.isFailed ? "x" : "v"
+            print("  \(mark) \(t.title) [\(store.projectName(t.projectId))]")
+        }
 
         let state = NotchState(geometry: NotchController.geometry(for: NotchController.targetScreen()))
         state.style = style
@@ -76,11 +79,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 exit(1)
             }
             ctx.draw(cg, in: CGRect(x: 0, y: 0, width: cg.width, height: cg.height))
-            let wing = state.wingWidth(running: store.runningCount, waiting: store.waitingCount, done: store.done.count)
+            let wing = state.wingWidth(running: store.runningCount, waiting: store.waitingCount, woke: store.woke.count,
+                                       done: store.done.count, read: store.read.count)
             if wing > 0 {
                 ctx.scaleBy(x: 2, y: 2)
                 ctx.translateBy(x: state.wingMinX(wing) + NotchState.wingLead, y: g.panelSize.height - g.notchHeight)
-                wingLayer(state.wingLayout(running: store.runningCount, waiting: store.waitingCount, done: store.done.count), g.notchHeight).render(in: ctx)
+                wingLayer(state.wingLayout(running: store.runningCount, waiting: store.waitingCount, woke: store.woke.count,
+                                           done: store.done.count, read: store.read.count), g.notchHeight).render(in: ctx)
             }
             write(ctx, "\(dir)/\(expanded ? "expanded" : "collapsed").png")
         }
@@ -88,8 +93,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Every style at a few counts, including overflow, on a plain black strip.
         let h = state.geometry.notchHeight
         for style in WingStyle.allCases {
-            for (r, w, d) in [(3, 1, 2), (1, 0, 0), (0, 1, 0), (0, 0, 1), (12, 7, 9)] {
-                let layout = WingLayout(style: style, running: r, waiting: w, done: d)
+            for (r, w, k, d, e) in [(3, 1, 0, 2, 0), (1, 0, 0, 0, 0), (0, 1, 0, 0, 0), (0, 0, 0, 1, 0), (12, 7, 0, 9, 0),
+                                    (2, 1, 2, 2, 3)] {
+                let layout = WingLayout(style: style, running: r, waiting: w, woke: k, done: d, read: e)
                 let width = layout.width + 24
                 guard let ctx = bitmap(Int(width * 2), Int(h * 2)) else { exit(1) }
                 ctx.scaleBy(x: 2, y: 2)
@@ -97,7 +103,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 ctx.fill(CGRect(x: 0, y: 0, width: width, height: h))
                 ctx.translateBy(x: 12, y: 0)
                 wingLayer(layout, h).render(in: ctx)
-                write(ctx, "\(dir)/wing-\(style.rawValue)-\(r)-\(w)-\(d).png")
+                write(ctx, "\(dir)/wing-\(style.rawValue)-\(r)-\(w)-\(k)-\(d)-\(e).png")
             }
         }
         exit(0)

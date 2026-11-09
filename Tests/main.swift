@@ -97,6 +97,44 @@ check(thread(["status": "failed", "snoozedUntil": at(30), "snoozedAt": at(-20), 
 check(!thread(["status": "failed", "snoozedUntil": at(30), "snoozedAt": at(-1), "lastVisitedAt": NSNull()]).isUnseenDone(now: now),
       "failure before snoozing stays snoozed")
 
+// Woke: a snooze ended after your last visit (SidebarThreadRow isWoke).
+check(thread(["snoozedUntil": at(-1), "snoozedAt": at(-20)]).isWoke(now: now), "woke after the visit")
+check(thread(["snoozedUntil": at(-1), "snoozedAt": at(-20), "lastVisitedAt": NSNull()]).isWoke(now: now), "woke, never opened")
+check(!thread(["snoozedUntil": at(-1), "snoozedAt": at(-20), "lastVisitedAt": at(0)]).isWoke(now: now), "visited since waking")
+check(!thread(["snoozedUntil": at(30), "snoozedAt": at(-20)]).isWoke(now: now), "still snoozed is not woke")
+check(!thread(["snoozedUntil": at(-1), "snoozedAt": at(-20), "settledOverride": "settled"]).isWoke(now: now), "settled is not woke")
+check(!thread(["status": "running", "snoozedUntil": at(-1), "snoozedAt": at(-20)]).isWoke(now: now), "woken at work is running")
+check(thread(["status": "failed", "snoozedUntil": at(30), "snoozedAt": at(-20), "lastVisitedAt": at(-10)]).isWoke(now: now),
+      "a failure after snoozing wakes it")
+check(thread(["status": "failed", "snoozedUntil": at(30), "snoozedAt": at(-20)]).wokeAt(now: now)
+      == ISO8601DateFormatter().date(from: at(-5)), "a failure wakes it at the failure")
+check(!thread().isWoke(now: now), "never snoozed is not woke")
+
+// Read: finished, seen, and still active.
+check(thread(["lastVisitedAt": at(-1)]).isRead(now: now), "seen completion is read")
+check(thread(["status": "failed", "lastVisitedAt": at(-1)]).isRead(now: now), "seen failure is read")
+check(!thread().isRead(now: now), "unseen completion is done, not read")
+check(!thread(["lastVisitedAt": at(-1), "settledOverride": "settled"]).isRead(now: now), "settled is not read")
+check(!thread(["lastVisitedAt": at(-1), "archivedAt": at(-1)]).isRead(now: now), "archived is not read")
+check(!thread(["lastVisitedAt": at(-1), "snoozedUntil": at(30), "snoozedAt": at(-1)]).isRead(now: now), "snoozed is not read")
+check(!thread(["status": "running", "lastVisitedAt": at(-1)]).isRead(now: now), "running is not read")
+check(!thread(["lastVisitedAt": at(-1), "lineage": ["relationshipToParent": "subagent"]]).isRead(now: now), "subagent is not read")
+check(!thread(["lastVisitedAt": at(-30), "snoozedUntil": at(-1), "snoozedAt": at(-20)]).isRead(now: now), "woke is not read")
+MainActor.assumeIsolated {
+    let store = Store()
+    var first = true
+    let threads: [[String: Any]] = [
+        ["id": "w", "status": "completed", "latestRunId": "r", "latestRunCompletedAt": at(-30), "lastVisitedAt": at(-25),
+         "snoozedUntil": at(-1), "snoozedAt": at(-20)],
+        ["id": "d", "status": "completed", "latestRunId": "r", "latestRunCompletedAt": at(-5), "lastVisitedAt": at(-10)],
+        ["id": "r", "status": "completed", "latestRunId": "r", "latestRunCompletedAt": at(-5), "lastVisitedAt": at(-1)],
+    ]
+    store.apply(["kind": "snapshot", "snapshot": ["threads": threads]], firstSnapshot: &first)
+    check(store.woke.map(\.id) == ["w"] && store.done.map(\.id) == ["d"] && store.read.map(\.id) == ["r"],
+          "store splits woke, done, and read")
+    check(store.finished.map(\.id) == ["w", "d", "r"], "list shows woke, then done, then read")
+}
+
 // Stream handling.
 MainActor.assumeIsolated {
     let store = Store()
@@ -185,6 +223,8 @@ check(!all.items.contains { if case .more = $0.item { return true }; return fals
 let tight = WingLayout.fitting(style: .critters, running: 20, waiting: 0, done: 0, maxWidth: 100)
 check(tight.width <= 100 && tight.items.contains { if case .more = $0.item { return true }; return false }, "a tight room overflows to +N")
 check(WingLayout.fitting(style: .critters, running: 0, waiting: 0, done: 0, maxWidth: 500).width == 0, "nothing to fit is empty")
+let five = WingLayout(style: .critters, running: 1, waiting: 1, woke: 1, done: 1, read: 1)
+check(five.items.map(\.item) == [.runner, .waiter, .waker, .sleeper, .dozer], "groups run running, waiting, woke, done, read")
 
 print(failures == 0 ? "all tests passed" : "\(failures) failed")
 exit(failures == 0 ? 0 : 1)

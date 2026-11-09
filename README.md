@@ -10,13 +10,16 @@ A black wing grows out of the notch's left edge with one figure per agent:
 
 - **Blue** while it works (subagents count too).
 - **Grey** while it waits on another thread or on background work.
+- **Orange** once it woke from a snooze and you haven't looked yet.
 - **Green** once it finished and you haven't looked yet.
+- **Dim green** once you've read it, until you settle it or write again.
 
 The wing can grow all the way to the screen's left edge, over the app menus. When more agents
 run than fit, every group with agents keeps at least one figure, and a group with more than it
 shows adds a `+N` for the rest.
 
-Hover the notch to list the finished threads (red: failed, amber: hit a usage limit), and click
+Hover the notch to list the woken, finished, and read threads (red: failed, amber: hit a usage
+limit), and click
 one to open it in T3 Code. Nothing to show means no wing: the notch looks like a notch. Need the
 menus under the wing? **Hide for a minute** at the bottom of the list takes it away for 60
 seconds; it comes back once the pointer isn't where the wing would be.
@@ -100,6 +103,11 @@ The counts follow T3's default sidebar:
 - **Finished**: a top-level thread showing "done" (its run ended after you last opened it), or
   one that failed since you last opened it. Settled, snoozed, archived, waiting, and approval- or
   input-blocked threads are left out.
+- **Woke**: the sidebar's "Woke" badge: a snooze ended (on its timer, or early on a failure)
+  after you last opened the thread, and it isn't settled. A woken thread at work counts as
+  working.
+- **Read**: a top-level thread that finished or failed and that you've opened since, still in the
+  sidebar's active list (not settled, snoozed, or archived).
 - **Working**: the sidebar's working rule, plus subagents, since each is an agent at work.
 - **Waiting**: the sidebar's "Waiting": blocked on another thread (such as a parent waiting on
   its subagents) or parked on background work it awaits. Top-level only, minus settled and
