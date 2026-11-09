@@ -126,6 +126,11 @@ check(!thread(["lastVisitedAt": at(-1), "archivedAt": at(-1)]).isRead(now: now),
 check(!thread(["lastVisitedAt": at(-1), "snoozedUntil": at(30), "snoozedAt": at(-1)]).isRead(now: now), "snoozed is not read")
 check(!thread(["status": "running", "lastVisitedAt": at(-1)]).isRead(now: now), "running is not read")
 check(!thread(["lastVisitedAt": at(-1), "lineage": ["relationshipToParent": "subagent"]]).isRead(now: now), "subagent is not read")
+check(!thread(["lastVisitedAt": at(-1), "lineage": ["relationshipToParent": NSNull(), "sideChat": true]]).isRead(now: now),
+      "side chat is not read")
+check(!thread(["lineage": ["relationshipToParent": NSNull(), "sideChat": true]]).isUnseenDone(now: now), "side chat is not done")
+check(!thread(["lastVisitedAt": at(-1), "pinnedAt": at(-60)]).isRead(now: now), "pinned is not read")
+check(thread(["pinnedAt": at(-60)]).isUnseenDone(now: now), "pinned still shows done")
 check(!thread(["lastVisitedAt": at(-30), "snoozedUntil": at(-1), "snoozedAt": at(-20)]).isRead(now: now), "woke is not read")
 MainActor.assumeIsolated {
     let store = Store()
@@ -232,6 +237,12 @@ check(tight.width <= 100 && tight.items.contains { if case .more = $0.item { ret
 check(WingLayout.fitting(style: .critters, running: 0, waiting: 0, done: 0, maxWidth: 500).width == 0, "nothing to fit is empty")
 let five = WingLayout(style: .critters, running: 1, waiting: 1, woke: 1, done: 1, read: 1)
 check(five.items.map(\.item) == [.runner, .waiter, .waker, .sleeper, .dozer], "groups run running, waiting, woke, done, read")
+let readHeavy = WingLayout(style: .critters, running: 6, waiting: 0, done: 1, read: 40)
+check(readHeavy.items.filter { $0.item == .runner }.count == 6 && readHeavy.items.filter { $0.item == .dozer }.count == 3,
+      "read figures get only what the others leave")
+let readOnly = WingLayout(style: .critters, running: 12, waiting: 0, done: 0, read: 5)
+check(readOnly.items.filter { $0.item == .dozer }.count == 1 && readOnly.items.contains { $0.item == .more(4, .read) },
+      "read keeps one figure when the rest is full")
 
 print(failures == 0 ? "all tests passed" : "\(failures) failed")
 exit(failures == 0 ? 0 : 1)

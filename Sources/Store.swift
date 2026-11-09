@@ -15,6 +15,10 @@ struct AgentThread: Identifiable, Equatable {
     let latestRunCompletedAt: Date?
     let lastVisitedAt: Date?
     let isSubagent: Bool
+    /// Subagents and side chats: never sidebar rows (contracts `isListedThreadLineage`).
+    let isUnlisted: Bool
+    /// Pinned threads have their own sidebar section, apart from the active list.
+    let isPinned: Bool
     let isShelved: Bool
     let snoozedAt: Date?
     let snoozedUntil: Date?
@@ -46,6 +50,8 @@ struct AgentThread: Identifiable, Equatable {
         lastVisitedAt = parseDate(json["lastVisitedAt"])
         let lineage = json["lineage"] as? [String: Any]
         isSubagent = (lineage?["relationshipToParent"] as? String) == "subagent"
+        isUnlisted = isSubagent || lineage?["sideChat"] as? Bool == true
+        isPinned = present(json["pinnedAt"])
         parentThreadId = lineage?["parentThreadId"] as? String
         isShelved = present(json["archivedAt"]) || (json["settledOverride"] as? String) == "settled"
         snoozedAt = parseDate(json["snoozedAt"])
@@ -96,7 +102,7 @@ struct AgentThread: Identifiable, Equatable {
     /// awaits. Subagents have no row, and snoozing or settling their parent can't reach them; the
     /// parent of a waiting subagent is itself blocked, so it already shows.
     func isWaiting(now: Date) -> Bool {
-        sidebarStatus == .waiting && !isSubagent && !isShelved && !isSnoozed(now: now)
+        sidebarStatus == .waiting && !isUnlisted && !isShelved && !isSnoozed(now: now)
     }
 
     var isFailed: Bool { sidebarStatus == .failed }
@@ -131,15 +137,16 @@ struct AgentThread: Identifiable, Equatable {
     /// and not settled. The row shows Woke only when nothing outranks it (working, waiting,
     /// a request, a failure), so only ready threads count.
     func isWoke(now: Date) -> Bool {
-        if isSubagent || isShelved || sidebarStatus != .ready { return false }
+        if isUnlisted || isShelved || sidebarStatus != .ready { return false }
         guard let woke = wokeAt(now: now) else { return false }
         return lastVisitedAt.map { $0 < woke } ?? true
     }
 
-    /// Any other thread with a finished run in the sidebar's active section, usually one you've
-    /// already seen: it waits for you to settle it or write again.
+    /// Any other thread with a finished run in the sidebar's active section (so not pinned),
+    /// usually one you've already seen: it waits for you to settle it or write again.
     func isRead(now: Date) -> Bool {
-        if isSubagent || isShelved || isSnoozed(now: now) || ![.ready, .failed].contains(sidebarStatus) { return false }
+        if isUnlisted || isPinned || isShelved || isSnoozed(now: now) { return false }
+        if ![.ready, .failed].contains(sidebarStatus) { return false }
         if latestRunCompletedAt == nil { return false }
         return !isUnseenDone(now: now) && !isWoke(now: now)
     }
@@ -147,7 +154,7 @@ struct AgentThread: Identifiable, Equatable {
     /// A sidebar row showing "done", or a failure you haven't opened since it failed. The sidebar
     /// keeps showing failures after a visit; the notch lists only what you haven't seen.
     func isUnseenDone(now: Date) -> Bool {
-        if isSubagent || isShelved || isSnoozed(now: now) { return false }
+        if isUnlisted || isShelved || isSnoozed(now: now) { return false }
         switch sidebarStatus {
         case .ready:
             guard let completed = latestRunCompletedAt, let visited = lastVisitedAt else { return false }

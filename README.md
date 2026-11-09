@@ -106,7 +106,8 @@ The counts follow T3's default sidebar:
   isn't settled. Only where the badge shows: a woken thread at work counts as working, and one
   that failed stays a failure.
 - **Read**: any other top-level thread whose run finished or failed, still in the sidebar's
-  active list (not settled, snoozed, or archived). Usually one you've already opened.
+  active list (not pinned, settled, snoozed, or archived). Usually one you've already opened.
+  Read figures get only the room the other groups leave.
 - **Working**: the sidebar's working rule, plus subagents, since each is an agent at work.
 - **Waiting**: the sidebar's "Waiting": blocked on another thread (such as a parent waiting on
   its subagents) or parked on background work it awaits. Top-level only, minus settled and

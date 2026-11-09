@@ -61,7 +61,9 @@ struct WingLayout: Equatable {
         case .critters: (Self.critterSize.width, 4)
         case .equalizer: (Self.barWidth, 3)
         }
-        let caps = Self.slots([running, waiting, woke, done, read], max: maxFigures)
+        // Read figures matter least and are usually the most: they get only what's left.
+        var caps = Self.slots([running, waiting, woke, done], max: maxFigures - min(read, 1))
+        caps.append(read == 0 ? 0 : max(1, min(read, maxFigures - caps.reduce(0, +))))
         var items: [Placed] = []
         var x: CGFloat = 0
         func add(_ item: Item, _ w: CGFloat, gap: CGFloat) {
