@@ -54,26 +54,34 @@ enum Demo {
         }
     }
 
-    /// Five finished threads for the list: done, failed, done, usage-limited, done.
+    /// Six threads for the list, as the story's last beats show them: one woken from a snooze,
+    /// three unread (done, failed, done), and two read (usage-limited, done).
     private static func demoStore() -> Store {
         let now = Date()
         func ago(_ minutes: Double) -> String {
             ISO8601DateFormatter().string(from: now.addingTimeInterval(-minutes * 60))
         }
-        let rows: [(String, String, String, Double, String?)] = [
-            ("Add retries with backoff to the uploader", "api", "completed", 1, nil),
-            ("Fix the flaky checkout end-to-end test", "web", "failed", 4, nil),
-            ("Write the migration for user settings", "api", "completed", 12, nil),
-            ("Split the sidebar into smaller hooks", "web", "failed", 26, "usage_limit"),
-            ("Bump dependencies and fix type errors", "cli", "completed", 70, nil),
+        enum Kind { case woke, done, read }
+        let rows: [(String, String, String, Double, String?, Kind)] = [
+            ("Check the nightly benchmark results", "cli", "completed", 300, nil, .woke),
+            ("Add retries with backoff to the uploader", "api", "completed", 1, nil, .done),
+            ("Fix the flaky checkout end-to-end test", "web", "failed", 4, nil, .done),
+            ("Write the migration for user settings", "api", "completed", 12, nil, .done),
+            ("Split the sidebar into smaller hooks", "web", "failed", 26, "usage_limit", .read),
+            ("Bump dependencies and fix type errors", "cli", "completed", 70, nil, .read),
         ]
         let threads: [[String: Any]] = rows.enumerated().map { i, row in
             var t: [String: Any] = [
                 "id": "demo-\(i)", "projectId": row.1, "title": row.0, "status": row.2,
                 "latestRunId": "run", "activeProviderThreadId": "provider",
-                "latestRunCompletedAt": ago(row.3), "lastVisitedAt": ago(row.3 + 30),
+                "latestRunCompletedAt": ago(row.3),
+                "lastVisitedAt": ago(row.5 == .read ? row.3 - 0.5 : row.3 + 30),
             ]
             if let error = row.4 { t["lastErrorClass"] = error }
+            if row.5 == .woke {
+                t["snoozedAt"] = ago(row.3 - 10)
+                t["snoozedUntil"] = ago(2)
+            }
             return t
         }
         let projects = ["api", "web", "cli"].map { ["id": $0, "title": $0] }
@@ -92,7 +100,7 @@ enum Demo {
         }.max() ?? 0
         let notchMinX = (20 + widestWing).rounded()
         let hovers = beats.contains(where: \.hover)
-        let size = CGSize(width: notchMinX + notch.width / 2 + 320, height: hovers ? 210 : notch.height + 14)
+        let size = CGSize(width: notchMinX + notch.width / 2 + 320, height: hovers ? 236 : notch.height + 14)
         let state = NotchState(geometry: NotchGeometry(panelSize: size, notchMinX: notchMinX,
                                                        notchWidth: notch.width, notchHeight: notch.height))
         state.style = style

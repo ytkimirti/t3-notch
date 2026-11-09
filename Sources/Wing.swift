@@ -17,7 +17,8 @@ private let blue = NSColor(red: 0.45, green: 0.75, blue: 1, alpha: 1)
 private let green = NSColor(red: 0.35, green: 0.85, blue: 0.5, alpha: 1)
 private let grey = NSColor(white: 0.62, alpha: 1)
 private let orange = NSColor(red: 1, green: 0.5, blue: 0.12, alpha: 1)
-private let dimGreen = NSColor(red: 0.35, green: 0.85, blue: 0.5, alpha: 0.4)
+// Green at 40% over black, opaque so overlapping pixels don't brighten.
+private let dimGreen = NSColor(red: 0.14, green: 0.34, blue: 0.2, alpha: 1)
 
 /// What sits where in the wing, in points from its left edge. Shared by the SwiftUI sizing and
 /// the layer drawing so the black shape always fits its contents.
@@ -215,6 +216,8 @@ struct WingLayout: Equatable {
         root.frame = CGRect(x: x, y: ((height - size.height) / 2).rounded(), width: size.width, height: size.height)
         let color = Self.color(group)
         let asleep = group == .done || group == .read
+        // Room above the head, so what floats up there stays on screen in a short menu bar.
+        let headroom = height - root.frame.maxY
         func pixel(_ col: Int, _ row: Int, _ path: CGMutablePath, dy: CGFloat = 0, h: CGFloat = px) {
             path.addRect(CGRect(x: CGFloat(col) * px, y: CGFloat(5 - row) * px + dy, width: px, height: h))
         }
@@ -239,32 +242,40 @@ struct WingLayout: Equatable {
         let eyes = CALayer()
         eyes.frame = CGRect(origin: .zero, size: size)
         bodyLayer.addSublayer(eyes)
-        let openEyes = shape(open, .black), closedEyes = shape(lids, .black)
-        eyes.addSublayer(openEyes)
+        let closedEyes = shape(lids, .black)
         eyes.addSublayer(closedEyes)
 
-        let legsA = CGMutablePath(), legsB = CGMutablePath()
-        pixel(1, 5, legsA); pixel(6, 5, legsA)
+        let legsB = CGMutablePath()
         pixel(2, 5, legsB); pixel(5, 5, legsB)
-        let a = shape(legsA, color), b = shape(legsB, color)
-        root.addSublayer(a)
+        let b = shape(legsB, color)
         root.addSublayer(b)
 
         if asleep {
-            openEyes.opacity = 0
-            a.opacity = 0
-            // Breathing: the body rises a point and settles, legs on the ground.
+            // Breathing: the body rises a point and settles, legs on the ground. A strip of skin
+            // under the belly fills the gap while it's up.
+            let belly = CALayer()
+            belly.frame = CGRect(x: px, y: px, width: 6 * px, height: 1)
+            belly.backgroundColor = color.cgColor
+            root.insertSublayer(belly, below: bodyLayer)
             let period: CFTimeInterval = group == .done ? 2.2 : 3.4
             bodyLayer.add(loop([flip("transform.translation.y", [0, 1])], duration: period, offset: phase(index, period)),
                           forKey: "breathe")
             if group == .done {
-                root.addSublayer(z(at: CGPoint(x: size.width - 3, y: size.height - 4), size: 6, period: 2.2,
+                let rise = min(7, max(headroom - 2, 3))
+                root.addSublayer(z(at: CGPoint(x: size.width - 3, y: size.height - 5), size: 6, rise: rise, period: 2.2,
                                    offset: phase(index, 2.2)))
-                root.addSublayer(z(at: CGPoint(x: size.width - 3, y: size.height - 4), size: 8, period: 2.2,
+                root.addSublayer(z(at: CGPoint(x: size.width - 3, y: size.height - 6), size: 7, rise: rise, period: 2.2,
                                    offset: phase(index, 2.2) + 1.1))
             }
             return root
         }
+
+        let openEyes = shape(open, .black)
+        eyes.addSublayer(openEyes)
+        let legsA = CGMutablePath()
+        pixel(1, 5, legsA); pixel(6, 5, legsA)
+        let a = shape(legsA, color)
+        root.addSublayer(a)
 
         // Awake ones blink every few seconds, each on its own beat.
         let blinkPeriod = 3.4 + Double(index % 3) * 0.6
@@ -283,17 +294,16 @@ struct WingLayout: Equatable {
             a.add(loop([flip("opacity", [1, 0])], duration: step, offset: offset), forKey: "walk")
             b.add(loop([flip("opacity", [0, 1])], duration: step, offset: offset), forKey: "walk")
             root.add(loop([flip("transform.translation.y", [0, 1])], duration: step, offset: offset), forKey: "hop")
-            // A puff of dust behind its feet on every other step.
+            // A puff of dust behind its feet on every other step, a point further back and fainter
+            // each half step, and held on the ground while the body hops.
             let dust = CALayer()
-            dust.frame = CGRect(x: -1, y: 0.5, width: 1, height: 1)
+            dust.frame = CGRect(x: -1, y: 0, width: 1, height: 1)
             dust.backgroundColor = NSColor(white: 0.75, alpha: 1).cgColor
             dust.opacity = 0
-            let drift = CABasicAnimation(keyPath: "transform.translation")
-            drift.fromValue = NSValue(size: .zero)
-            drift.toValue = NSValue(size: CGSize(width: -4, height: 1.5))
-            let fade = CAKeyframeAnimation(keyPath: "opacity")
-            fade.values = [0.55, 0]
-            dust.add(loop([drift, fade], duration: step * 2, offset: offset), forKey: "dust")
+            dust.add(loop([flip("transform.translation.x", [0, -1, -2, -3]),
+                           flip("transform.translation.y", [0, -1, 0, -1]),
+                           flip("opacity", [0.6, 0.45, 0.3, 0.15])],
+                          duration: step * 2, offset: offset), forKey: "dust")
             root.addSublayer(dust)
         case .waiting, .woke:
             a.opacity = 0
@@ -316,20 +326,22 @@ struct WingLayout: Equatable {
                 bang.fontSize = 8
                 bang.foregroundColor = color.cgColor
                 bang.contentsScale = 2
-                bang.frame = CGRect(x: size.width - 1, y: size.height - 3, width: 6, height: 10)
+                // Beside the head, so a short menu bar doesn't cut it off.
+                bang.frame = CGRect(x: size.width - 1, y: size.height - 7, width: 6, height: 10)
                 bang.opacity = 0
                 bang.add(loop([keys("opacity", [0, 1, 0], [0, 0.66, 0.96, 1])], duration: period, offset: offset),
                          forKey: "bang")
                 root.addSublayer(bang)
             }
         case .done, .read:
-            break
+            break // asleep, handled above
         }
         return root
     }
 
-    /// A "z" that drifts up and to the right as it fades in and out.
-    private static func z(at origin: CGPoint, size: CGFloat, period: CFTimeInterval, offset: CFTimeInterval) -> CALayer {
+    /// A "z" that drifts `rise` points up and to the right as it fades in and out.
+    private static func z(at origin: CGPoint, size: CGFloat, rise: CGFloat, period: CFTimeInterval,
+                          offset: CFTimeInterval) -> CALayer {
         let z = CATextLayer()
         z.string = "z"
         z.font = NSFont.monospacedSystemFont(ofSize: size, weight: .bold)
@@ -340,7 +352,7 @@ struct WingLayout: Equatable {
         z.opacity = 0
         let drift = CABasicAnimation(keyPath: "transform.translation")
         drift.fromValue = NSValue(size: .zero)
-        drift.toValue = NSValue(size: CGSize(width: 4, height: 7))
+        drift.toValue = NSValue(size: CGSize(width: 4, height: rise))
         let fade = CAKeyframeAnimation(keyPath: "opacity")
         fade.values = [0, 1, 0]
         fade.keyTimes = [0, 0.3, 1]
