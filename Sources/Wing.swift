@@ -16,7 +16,7 @@ enum WingStyle: String, CaseIterable {
 private let blue = NSColor(red: 0.45, green: 0.75, blue: 1, alpha: 1)
 private let green = NSColor(red: 0.35, green: 0.85, blue: 0.5, alpha: 1)
 private let grey = NSColor(white: 0.62, alpha: 1)
-private let orange = NSColor(red: 1, green: 0.62, blue: 0.25, alpha: 1)
+private let orange = NSColor(red: 1, green: 0.5, blue: 0.12, alpha: 1)
 private let dimGreen = NSColor(red: 0.35, green: 0.85, blue: 0.5, alpha: 0.4)
 
 /// What sits where in the wing, in points from its left edge. Shared by the SwiftUI sizing and

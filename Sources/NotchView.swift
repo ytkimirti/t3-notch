@@ -308,7 +308,7 @@ private struct Row: View {
     // Woken ones are orange, like their figures; read ones fade.
     private var dotColor: Color {
         let color = if kind == .woke {
-            Color(red: 1, green: 0.62, blue: 0.25)
+            Color(red: 1, green: 0.5, blue: 0.12)
         } else if !thread.isFailed {
             Color(red: 0.35, green: 0.85, blue: 0.5)
         } else {

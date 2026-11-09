@@ -68,10 +68,10 @@ struct AgentThread: Identifiable, Equatable {
         delegatedFrom = (delegated?["environmentId"] as? String).flatMap { env in
             (delegated?["threadId"] as? String).map { ThreadRef(environment: env, thread: $0) }
         }
-        isArchived = present(json["archivedAt"])
         isPinned = present(json["pinnedAt"])
         parentThreadId = lineage?["parentThreadId"] as? String
-        isShelved = present(json["archivedAt"]) || (json["settledOverride"] as? String) == "settled"
+        isArchived = present(json["archivedAt"])
+        isShelved = isArchived || (json["settledOverride"] as? String) == "settled"
         snoozedAt = parseDate(json["snoozedAt"])
         snoozedUntil = parseDate(json["snoozedUntil"])
         updatedAt = parseDate(json["updatedAt"])
