@@ -12,7 +12,7 @@ A black wing grows out of the notch's left edge with one figure per agent:
 - **Grey** while it waits on another thread or on background work.
 - **Orange** once it woke from a snooze and you haven't looked yet.
 - **Green** once it finished and you haven't looked yet.
-- **Dim green** once you've read it, until you settle it or write again.
+- **Dim green** once it's finished and you've seen it, until you settle it or write again.
 
 The wing can grow all the way to the screen's left edge, over the app menus. When more agents
 run than fit, every group with agents keeps at least one figure, and a group with more than it
@@ -20,16 +20,16 @@ shows adds a `+N` for the rest.
 
 Hover the notch to list the woken, finished, and read threads (red: failed, amber: hit a usage
 limit), and click one to open it in T3 Code. Nothing to show means no wing: the notch looks like
-a notch. Need the menus under the wing? **Hide for a minute** at the bottom of the list takes it away for 60
-seconds; it comes back once the pointer isn't where the wing would be.
+a notch. Need the menus under the wing? **Hide for a minute** at the bottom of the list takes it
+away for 60 seconds; it comes back once the pointer isn't where the wing would be.
 
 ## Styles
 
 `critters` (the default): pixel creatures that trot while working, stand and glance around while
-waiting, and doze when done.
+waiting or just woken, doze when done, and lie dim once read.
 
-`equalizer`: bars that bounce while working, idle at half height while waiting, and rest short
-when done.
+`equalizer`: bars that bounce while working, idle at half height while waiting or just woken,
+and rest short when done, dim once read.
 
 <p align="center">
   <img src="docs/equalizer.gif" width="567" alt="The equalizer style: bouncing blue bars, a dim grey bar, and short green bars.">

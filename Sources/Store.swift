@@ -3,6 +3,12 @@ import Foundation
 /// T3's default sidebar status (web `resolveSidebarThreadStatus`).
 enum SidebarStatus { case attention, waiting, working, failed, ready }
 
+/// A thread on a given T3 environment.
+struct ThreadRef: Hashable {
+    let environment: String
+    let thread: String
+}
+
 /// The fields of T3's `OrchestrationV2ThreadShell` the notch needs, with T3's rules ported as
 /// literally as possible: client-runtime `shellRuntime`, `toSidebarThreadSummary` and
 /// `effectiveSnoozed`, web `resolveSidebarThreadStatus` and `hasUnseenCompletion/Failure`.
@@ -15,8 +21,15 @@ struct AgentThread: Identifiable, Equatable {
     let latestRunCompletedAt: Date?
     let lastVisitedAt: Date?
     let isSubagent: Bool
-    /// Subagents and side chats: never sidebar rows (contracts `isListedThreadLineage`).
-    let isUnlisted: Bool
+    /// Subagents, side chats, and tasks delegated from a parent the client lists show under that
+    /// parent, never as sidebar rows (client-runtime `isShownUnderParent`). The Store sets
+    /// `shownUnderParent` for delegated tasks below.
+    var isUnlisted: Bool { isSubagent || isSideChat || shownUnderParent }
+    let isSideChat: Bool
+    /// `delegatedFrom`: the environment and thread this task was delegated from.
+    let delegatedFrom: ThreadRef?
+    var shownUnderParent = false
+    let isArchived: Bool
     /// Pinned threads have their own sidebar section, apart from the active list.
     let isPinned: Bool
     let isShelved: Bool
@@ -50,7 +63,12 @@ struct AgentThread: Identifiable, Equatable {
         lastVisitedAt = parseDate(json["lastVisitedAt"])
         let lineage = json["lineage"] as? [String: Any]
         isSubagent = (lineage?["relationshipToParent"] as? String) == "subagent"
-        isUnlisted = isSubagent || lineage?["sideChat"] as? Bool == true
+        isSideChat = lineage?["sideChat"] as? Bool == true
+        let delegated = json["delegatedFrom"] as? [String: Any]
+        delegatedFrom = (delegated?["environmentId"] as? String).flatMap { env in
+            (delegated?["threadId"] as? String).map { ThreadRef(environment: env, thread: $0) }
+        }
+        isArchived = present(json["archivedAt"])
         isPinned = present(json["pinnedAt"])
         parentThreadId = lineage?["parentThreadId"] as? String
         isShelved = present(json["archivedAt"]) || (json["settledOverride"] as? String) == "settled"
@@ -275,14 +293,30 @@ final class Store: ObservableObject {
     private func recompute() {
         let now = Date()
         let counted = countedSources(now: now)
-        let all = counted.flatMap { withSubagentRequests(sources[$0] ?? [:]) }
+        // delegatedUnderParentAtom: a task delegated from a listed, unarchived thread on a
+        // watched environment shows under that parent.
+        var parents = Set<ThreadRef>()
+        for s in counted {
+            guard let env = environments[s] else { continue }
+            for t in (sources[s] ?? [:]).values where !t.isArchived { parents.insert(ThreadRef(environment: env, thread: t.id)) }
+        }
+        let all = counted.flatMap { withSubagentRequests(sources[$0] ?? [:]) }.map { t in
+            var t = t
+            t.shownUnderParent = t.delegatedFrom.map(parents.contains) ?? false
+            return t
+        }
         let running = all.filter(\.isRunning).count
         let waiting = all.filter { $0.isWaiting(now: now) }.count
+        // Ties break by key, so rows don't swap under the pointer as other threads change.
+        func newestFirst(_ a: (Date?, AgentThread), _ b: (Date?, AgentThread)) -> Bool {
+            let x = a.0 ?? .distantPast, y = b.0 ?? .distantPast
+            return x != y ? x > y : a.1.key < b.1.key
+        }
         func latestFirst(_ a: AgentThread, _ b: AgentThread) -> Bool {
-            (a.latestRunCompletedAt ?? .distantPast) > (b.latestRunCompletedAt ?? .distantPast)
+            newestFirst((a.latestRunCompletedAt, a), (b.latestRunCompletedAt, b))
         }
         let wokeNow = all.filter { $0.isWoke(now: now) }.sorted {
-            ($0.wokeAt(now: now) ?? .distantPast) > ($1.wokeAt(now: now) ?? .distantPast)
+            newestFirst(($0.wokeAt(now: now), $0), ($1.wokeAt(now: now), $1))
         }
         let unseen = all.filter { $0.isUnseenDone(now: now) && !$0.isWoke(now: now) }.sorted(by: latestFirst)
         let seen = all.filter { $0.isRead(now: now) }.sorted(by: latestFirst)

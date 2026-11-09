@@ -146,6 +146,26 @@ MainActor.assumeIsolated {
           "store splits woke, done, and read")
     check(store.finished.map(\.id) == ["w", "d", "r"], "list shows woke, then done, then read")
 }
+MainActor.assumeIsolated {
+    // A task delegated from a thread on another watched server shows under its parent.
+    let store = Store()
+    var a = true, b = true
+    let task: [String: Any] = ["id": "task", "status": "completed", "latestRunId": "r", "latestRunCompletedAt": at(-5),
+                               "lastVisitedAt": at(-1), "delegatedFrom": ["environmentId": "envA", "threadId": "parent", "title": "P"]]
+    store.apply(["kind": "snapshot", "snapshot": ["threads": [task]]], firstSnapshot: &b, source: 1)
+    store.environments = [0: "envA", 1: "envB"]
+    check(store.read.map(\.id) == ["task"], "a task whose parent isn't listed stays listed")
+    store.apply(["kind": "snapshot", "snapshot": ["threads": [["id": "parent", "status": "running", "latestRunId": "r"]]]],
+                firstSnapshot: &a, source: 0)
+    check(store.read.isEmpty && store.runningCount == 1, "a task under a listed parent isn't read")
+    let woke = (0..<4).map { i -> [String: Any] in
+        ["id": "w\(i)", "status": "completed", "latestRunId": "r", "latestRunCompletedAt": at(-30), "lastVisitedAt": at(-25),
+         "snoozedUntil": at(-1), "snoozedAt": at(-20)]
+    }
+    var c = true
+    store.apply(["kind": "snapshot", "snapshot": ["threads": woke]], firstSnapshot: &c, source: 1)
+    check(store.woke.map(\.id) == ["w0", "w1", "w2", "w3"], "woke ties keep a stable order")
+}
 
 // Stream handling.
 MainActor.assumeIsolated {
