@@ -104,11 +104,18 @@ check(!thread(["snoozedUntil": at(-1), "snoozedAt": at(-20), "lastVisitedAt": at
 check(!thread(["snoozedUntil": at(30), "snoozedAt": at(-20)]).isWoke(now: now), "still snoozed is not woke")
 check(!thread(["snoozedUntil": at(-1), "snoozedAt": at(-20), "settledOverride": "settled"]).isWoke(now: now), "settled is not woke")
 check(!thread(["status": "running", "snoozedUntil": at(-1), "snoozedAt": at(-20)]).isWoke(now: now), "woken at work is running")
-check(thread(["status": "failed", "snoozedUntil": at(30), "snoozedAt": at(-20), "lastVisitedAt": at(-10)]).isWoke(now: now),
-      "a failure after snoozing wakes it")
+check(!thread(["status": "failed", "snoozedUntil": at(30), "snoozedAt": at(-20), "lastVisitedAt": at(-10)]).isWoke(now: now),
+      "a failure after snoozing shows as failed, not woke")
+check(thread(["status": "failed", "snoozedUntil": at(30), "snoozedAt": at(-20), "lastVisitedAt": NSNull()]).isUnseenDone(now: now),
+      "a failure after snoozing stays in done")
+check(thread(["snoozedUntil": at(30), "snoozedAt": at(-30), "lastVisitedAt": at(-20), "updatedAt": at(-2),
+              "pendingRuntimeRequest": ["kind": "auth_refresh"]]).isWoke(now: now),
+      "a request wakes it at the runtime's last update")
 check(thread(["status": "failed", "snoozedUntil": at(30), "snoozedAt": at(-20)]).wokeAt(now: now)
       == ISO8601DateFormatter().date(from: at(-5)), "a failure wakes it at the failure")
 check(!thread().isWoke(now: now), "never snoozed is not woke")
+check(!thread(["latestRunId": NSNull(), "activeProviderThreadId": NSNull(), "latestRunCompletedAt": NSNull()]).isRead(now: now),
+      "a thread that never ran is not read")
 
 // Read: finished, seen, and still active.
 check(thread(["lastVisitedAt": at(-1)]).isRead(now: now), "seen completion is read")

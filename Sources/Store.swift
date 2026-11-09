@@ -18,6 +18,8 @@ struct AgentThread: Identifiable, Equatable {
     let isShelved: Bool
     let snoozedAt: Date?
     let snoozedUntil: Date?
+    /// The shell's updatedAt, which T3's client uses as `runtime.updatedAt`.
+    let updatedAt: Date?
     let hasRuntimeRequest: Bool
     let isUsageLimited: Bool
     let parentThreadId: String?
@@ -48,6 +50,7 @@ struct AgentThread: Identifiable, Equatable {
         isShelved = present(json["archivedAt"]) || (json["settledOverride"] as? String) == "settled"
         snoozedAt = parseDate(json["snoozedAt"])
         snoozedUntil = parseDate(json["snoozedUntil"])
+        updatedAt = parseDate(json["updatedAt"])
 
         // shellRuntime: background work the agent waits on parks the thread at idle.
         let holds = (json["pendingBackgroundTasks"] as? [[String: Any]] ?? []).contains {
@@ -113,30 +116,31 @@ struct AgentThread: Identifiable, Equatable {
         return failedAt > snoozedAt
     }
 
-    /// threadWokeAt: when a snooze ended, by its timer or by a raised hand. T3 dates a hand
-    /// raised by a request at the runtime's last update, which the shell here lacks; the snooze
-    /// start stands in (such a thread needs attention, so the wing doesn't show it anyway).
+    /// threadWokeAt: when a snooze ended, by its timer or by a raised hand (a failure since the
+    /// snooze, else the runtime's last update).
     func wokeAt(now: Date) -> Date? {
         guard let snoozedUntil else { return nil }
         if raisedHandWhileSnoozed {
             if isFailed, let failedAt = latestRunCompletedAt, snoozedAt.map({ failedAt > $0 }) ?? true { return failedAt }
-            return snoozedAt
+            return (runtimeStatus == nil ? nil : updatedAt) ?? snoozedAt
         }
         return snoozedUntil <= now ? snoozedUntil : nil
     }
 
     /// The sidebar row's "Woke" badge (SidebarThreadRow `isWoke`): woken since you last opened it,
-    /// and not settled. Only finished ones: a woken thread at work shows as working.
+    /// and not settled. The row shows Woke only when nothing outranks it (working, waiting,
+    /// a request, a failure), so only ready threads count.
     func isWoke(now: Date) -> Bool {
-        if isSubagent || isShelved || ![.ready, .failed].contains(sidebarStatus) { return false }
+        if isSubagent || isShelved || sidebarStatus != .ready { return false }
         guard let woke = wokeAt(now: now) else { return false }
         return lastVisitedAt.map { $0 < woke } ?? true
     }
 
-    /// A finished thread in the sidebar's active section that you've already seen: it waits for
-    /// you to settle it or write again.
+    /// Any other thread with a finished run in the sidebar's active section, usually one you've
+    /// already seen: it waits for you to settle it or write again.
     func isRead(now: Date) -> Bool {
         if isSubagent || isShelved || isSnoozed(now: now) || ![.ready, .failed].contains(sidebarStatus) { return false }
+        if latestRunCompletedAt == nil { return false }
         return !isUnseenDone(now: now) && !isWoke(now: now)
     }
 

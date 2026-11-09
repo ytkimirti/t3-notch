@@ -19,9 +19,8 @@ run than fit, every group with agents keeps at least one figure, and a group wit
 shows adds a `+N` for the rest.
 
 Hover the notch to list the woken, finished, and read threads (red: failed, amber: hit a usage
-limit), and click
-one to open it in T3 Code. Nothing to show means no wing: the notch looks like a notch. Need the
-menus under the wing? **Hide for a minute** at the bottom of the list takes it away for 60
+limit), and click one to open it in T3 Code. Nothing to show means no wing: the notch looks like
+a notch. Need the menus under the wing? **Hide for a minute** at the bottom of the list takes it away for 60
 seconds; it comes back once the pointer isn't where the wing would be.
 
 ## Styles
@@ -103,11 +102,11 @@ The counts follow T3's default sidebar:
 - **Finished**: a top-level thread showing "done" (its run ended after you last opened it), or
   one that failed since you last opened it. Settled, snoozed, archived, waiting, and approval- or
   input-blocked threads are left out.
-- **Woke**: the sidebar's "Woke" badge: a snooze ended (on its timer, or early on a failure)
-  after you last opened the thread, and it isn't settled. A woken thread at work counts as
-  working.
-- **Read**: a top-level thread that finished or failed and that you've opened since, still in the
-  sidebar's active list (not settled, snoozed, or archived).
+- **Woke**: the sidebar's "Woke" badge: a snooze ended after you last opened the thread, and it
+  isn't settled. Only where the badge shows: a woken thread at work counts as working, and one
+  that failed stays a failure.
+- **Read**: any other top-level thread whose run finished or failed, still in the sidebar's
+  active list (not settled, snoozed, or archived). Usually one you've already opened.
 - **Working**: the sidebar's working rule, plus subagents, since each is an agent at work.
 - **Waiting**: the sidebar's "Waiting": blocked on another thread (such as a parent waiting on
   its subagents) or parked on background work it awaits. Top-level only, minus settled and

@@ -5,11 +5,11 @@ import SwiftUI
 /// How the left wing shows agents: one shape per agent, blue while working, grey while waiting,
 /// orange when woken from a snooze, green when done, dim green once you've read it.
 enum WingStyle: String, CaseIterable {
-    /// Pixel creatures: workers trot in place, waiting ones stand and glance around, finished ones
-    /// doze until you open them.
+    /// Pixel creatures: workers trot in place, waiting and woken ones stand and glance around,
+    /// finished ones doze until you open them, then lie dim.
     case critters
-    /// Bars: workers bounce like audio levels, waiting ones idle at half height, finished ones
-    /// rest as short green bars.
+    /// Bars: workers bounce like audio levels, waiting and woken ones idle at half height,
+    /// finished ones rest as short green bars, dim once read.
     case equalizer
 }
 
@@ -236,9 +236,7 @@ struct WingLayout: Equatable {
             // Stands still and glances left, then right, now and then.
             let glance = flip("transform.translation.x", [0, 0, 0, -1, -1, 0, 0, 0, 1, 1])
             eyeLayer.add(loop([glance], duration: 4, offset: phase(index, 4)), forKey: "glance")
-        } else if group == .read {
-            // No z: just lying there.
-        } else if asleep {
+        } else if group == .done {
             let z = CATextLayer()
             z.string = "z"
             z.font = NSFont.monospacedSystemFont(ofSize: 7, weight: .bold)
@@ -255,7 +253,7 @@ struct WingLayout: Equatable {
             fade.keyTimes = [0, 0.3, 1]
             z.add(loop([drift, fade], duration: 2.2, offset: phase(index, 2.2)), forKey: "z")
             root.addSublayer(z)
-        } else {
+        } else if !asleep {
             let a = shape(legsA, color)
             b.opacity = 0 // the walk animation swaps the pairs
             root.addSublayer(a)
