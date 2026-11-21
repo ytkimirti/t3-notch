@@ -214,9 +214,12 @@ struct DoneList: View {
     var body: some View {
         VStack(spacing: 0) {
             list
-            HideButton(action: hide)
-                .frame(maxWidth: .infinity, alignment: .trailing)
-                .frame(height: NotchState.footerHeight)
+            HStack(spacing: 0) {
+                FooterButton(icon: "power", title: "Quit", action: { NSApp.terminate(nil) })
+                Spacer(minLength: 0)
+                FooterButton(icon: "eye.slash", title: "Hide for a minute", action: hide)
+            }
+            .frame(height: NotchState.footerHeight)
         }
     }
 
@@ -243,16 +246,19 @@ struct DoneList: View {
     }
 }
 
-/// Takes the notch off the menu bar for a minute, so the menu items under the wing can be used.
-private struct HideButton: View {
+/// A quiet text button in the list's footer: "Hide for a minute" takes the notch off the menu bar
+/// so the menu items under the wing can be used; "Quit" stops the app until the next login.
+private struct FooterButton: View {
+    let icon: String
+    let title: String
     let action: () -> Void
     @State private var hover = false
 
     var body: some View {
         Button(action: action) {
             HStack(spacing: 4) {
-                Image(systemName: "eye.slash")
-                Text("Hide for a minute")
+                Image(systemName: icon)
+                Text(title)
             }
             .font(.system(size: 10, weight: .medium))
             .foregroundStyle(.white.opacity(hover ? 0.85 : 0.38))

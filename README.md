@@ -22,6 +22,10 @@ Hover the notch to list the woken, finished, and read threads (red: failed, ambe
 limit), and click one to open it in T3 Code. Nothing to show means no wing: the notch looks like
 a notch. Need the menus under the wing? **Hide for a minute** at the bottom of the list takes it
 away for 60 seconds; it comes back once the pointer isn't where the wing would be.
+**Quit** next to it stops the app until your next login.
+
+The wing shows only while the T3 Code app runs on the Mac: quit T3 Code and it goes away, open
+it again and it comes back.
 
 ## Styles
 

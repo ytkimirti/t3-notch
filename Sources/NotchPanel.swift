@@ -25,6 +25,8 @@ final class NotchController {
     private var leftAt: Date?
     private var enteredAt: Date?
     private var hidden = false
+    /// The wing shows only while the T3 Code app runs.
+    private var t3Running = NotchController.isT3Running()
     private var unhideTimer: Timer?
     private var cancellables: Set<AnyCancellable> = []
 
@@ -86,6 +88,20 @@ final class NotchController {
                                                           object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.reposition() }
         }
+        // Off the menu bar while T3 Code is closed; back when it opens.
+        for name in [NSWorkspace.didLaunchApplicationNotification, NSWorkspace.didTerminateApplicationNotification] {
+            NSWorkspace.shared.notificationCenter.addObserver(forName: name, object: nil, queue: .main) { [weak self] note in
+                let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+                guard app?.bundleIdentifier == Self.t3BundleID else { return }
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    self.t3Running = Self.isT3Running()
+                    if !self.t3Running { self.state.expanded = false }
+                    self.reposition()
+                    self.updateHover()
+                }
+            }
+        }
         // The hot zone changes size when counts change; re-check while the mouse sits still.
         store.objectWillChange.sink { [weak self] _ in
             DispatchQueue.main.async { self?.updateHover() }
@@ -110,7 +126,7 @@ final class NotchController {
         let notchScreenMinX = Self.notchScreenMinX(screen)
         panel.setFrame(NSRect(x: notchScreenMinX - g.notchMinX, y: screen.frame.maxY - g.panelSize.height,
                               width: g.panelSize.width, height: g.panelSize.height), display: true)
-        if hidden { panel.orderOut(nil) } else { panel.orderFrontRegardless() }
+        if hidden || !t3Running { panel.orderOut(nil) } else { panel.orderFrontRegardless() }
     }
 
     /// Off the menu bar for a minute, then back once the pointer isn't where the wing would be.
@@ -202,9 +218,15 @@ final class NotchController {
         panel.ignoresMouseEvents = true
         if let env = store.environments[thread.source], let url = URL(string: "t3code://threads/\(env)/\(thread.id)") {
             NSWorkspace.shared.open(url)
-        } else if let app = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.t3tools.t3code") {
+        } else if let app = NSWorkspace.shared.urlForApplication(withBundleIdentifier: Self.t3BundleID) {
             NSWorkspace.shared.openApplication(at: app, configuration: NSWorkspace.OpenConfiguration())
         }
+    }
+
+    nonisolated static let t3BundleID = "com.t3tools.t3code"
+
+    static func isT3Running() -> Bool {
+        NSWorkspace.shared.runningApplications.contains { $0.bundleIdentifier == t3BundleID && !$0.isTerminated }
     }
 
     // MARK: Screen geometry (CodeIsland's ScreenDetector)
