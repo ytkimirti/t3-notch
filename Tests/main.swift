@@ -347,7 +347,7 @@ do {
     check(everywhere == Set(WingLayout.Gag.allCases), "every trait shows up somewhere")
     let keys = (0..<2000).map { "thread-\($0)" }
     let characters = keys.filter { WingLayout.trait(for: .running, key: $0) != nil }
-    check((800...1200).contains(characters.count), "about half are characters (\(characters.count))")
+    check((140...260).contains(characters.count), "about one in ten are characters (\(characters.count))")
     check(keys.allSatisfy { (WingLayout.trait(for: .running, key: $0) == nil) == (WingLayout.trait(for: .done, key: $0) == nil) },
           "a character has a trait in every group")
     check(Set(characters.compactMap { WingLayout.trait(for: .waiting, key: $0) }).count == WingLayout.gags(for: .waiting).count,

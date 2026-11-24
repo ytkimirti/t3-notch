@@ -37,7 +37,7 @@ it again and it comes back.
 working, glance around and tap their feet while waiting, nudge now and then when just woken, sleep
 under floating z's when done, and doze dimly once read.
 
-About half the agents are characters with a trait they keep on: shades, a cigar, a crown, a
+About one agent in ten is a character with a trait they keep on: shades, a cigar, a crown, a
 bird on the head, an umbrella in its own little rain, and more. The thread picks it, so an agent
 keeps its own, with one trait for each state. Most do a little bit now and then: the cigar
 glows and blows a smoke ring, the top hat tips, the bubble gum pops.

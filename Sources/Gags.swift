@@ -1,7 +1,7 @@
 import AppKit
 import QuartzCore
 
-/// Easter eggs: about half the agents are characters, each with a trait it keeps on for as long as
+/// Easter eggs: about one agent in ten is a character, each with a trait it keeps on for as long as
 /// it stays in its group: shades, a cigar, a crown, a bird on its head. The thread's id picks the
 /// trait, so an agent keeps its own: the same one each time it comes back to a group, another one
 /// in each group it moves to. Most traits also do a little bit now and then (the cigar glows and
@@ -34,7 +34,7 @@ extension WingLayout {
     }
 
     /// Percent of agents that are characters.
-    static let traitShare: UInt64 = 50
+    static let traitShare: UInt64 = 10
 
     /// Traits by thread, for the demo.
     static var forcedTraits: [String: Gag] = [:]
