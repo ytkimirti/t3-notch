@@ -453,10 +453,15 @@ struct WingView: NSViewRepresentable {
     let layout: WingLayout
     let keys: WingKeys
     let height: CGFloat
+    /// The store has settled after launch, so changes are worth animating.
+    let settled: Bool
 
     final class Host: NSView {
         let animator = WingAnimator()
         var built: (WingLayout, WingKeys, CGFloat)?
+        /// Whether the store had settled at the last SwiftUI update: the update that settles it (the
+        /// last server checking in) is no agent's doing, so it doesn't animate either.
+        var wasSettled = false
 
         /// The figures hang from the right edge, which stays put beside the notch while SwiftUI
         /// springs the wing wider or narrower.
@@ -473,9 +478,12 @@ struct WingView: NSViewRepresentable {
     }
 
     func updateNSView(_ view: Host, context: Context) {
+        let animate = settled && view.wasSettled
+        view.wasSettled = settled
         if let built = view.built, built.0 == layout, built.1 == keys, built.2 == height { return }
         view.built = (layout, keys, height)
         guard let root = view.layer else { return }
-        view.animator.update(root: root, layout: layout, keys: keys, height: height, now: CACurrentMediaTime())
+        view.animator.update(root: root, layout: layout, keys: keys, height: height, now: CACurrentMediaTime(),
+                             animate: animate)
     }
 }

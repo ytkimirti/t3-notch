@@ -196,7 +196,7 @@ struct NotchView: View {
                 // ImageRenderer can't draw AppKit views; `--render` composites the layers itself.
                 if renderDir == nil {
                     WingView(layout: state.wingLayout(running: running, waiting: waiting, woke: woke, done: done, read: read),
-                             keys: store.wingKeys, height: g.notchHeight)
+                             keys: store.wingKeys, height: g.notchHeight, settled: store.settled)
                 } else {
                     Color.clear
                 }

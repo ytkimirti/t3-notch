@@ -41,6 +41,8 @@ final class WingAnimator {
         let body: CALayer
         /// Until when it's still moving under its own steam (a jump or a glide).
         var busyUntil: CFTimeInterval = 0
+        /// Until when it's still waiting to pop in, so not on screen yet.
+        var hiddenUntil: CFTimeInterval = 0
         /// The burst waiting for it at the end of a jump, moved along if the jump is redirected.
         var landing: [CALayer] = []
         var landingColor: NSColor?
@@ -57,8 +59,6 @@ final class WingAnimator {
     private var debris: [(layer: CALayer, until: CFTimeInterval)] = []
     private var style: WingStyle?
     private var height: CGFloat = 0
-    /// False until an update first shows figures, which appear without fanfare.
-    private var primed = false
     /// Animating on screen, in `CACurrentMediaTime`; false for the demo's simulated clock.
     private let live: Bool
     private var sweepScheduled = false
@@ -79,8 +79,10 @@ final class WingAnimator {
         CATransaction.commit()
     }
 
-    /// Shows `layout` in `root`, animating from what it showed before. `now` is the layer time.
-    func update(root: CALayer, layout: WingLayout, keys: WingKeys, height: CGFloat, now: CFTimeInterval) {
+    /// Shows `layout` in `root`, animating from what it showed before unless `animate` is false
+    /// (while the first snapshots come in). `now` is the layer time.
+    func update(root: CALayer, layout: WingLayout, keys: WingKeys, height: CGFloat, now: CFTimeInterval,
+                animate: Bool = true) {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         defer { CATransaction.commit() }
@@ -97,7 +99,6 @@ final class WingAnimator {
             mores = [:]
             moreLayers = [:]
             debris = []
-            primed = false
         }
         style = layout.style
         self.height = height
@@ -152,7 +153,7 @@ final class WingAnimator {
             guard var f = figures[p.key], f.group == p.item.group else { continue }
             figures[p.key] = nil
             let to = CGPoint(x: p.x + p.width / 2, y: f.box.position.y)
-            slide(&f, to: to, delay: jumping ? 0.14 : 0, now: now)
+            if animate { slide(&f, to: to, delay: jumping ? 0.14 : 0, now: now) } else { f.box.position = to }
             kept[p.key] = f
             usedIndex[f.group, default: []].insert(f.index)
         }
@@ -166,22 +167,30 @@ final class WingAnimator {
             usedIndex[g, default: []].insert(index)
             var f = makeFigure(p.item, x: p.x, width: p.width, index: index)
             stage.addSublayer(f.box)
-            if !primed {
-                // First show: nothing to animate from.
+            if !animate {
+                figures[p.key]?.box.removeFromSuperlayer()
+                figures[p.key] = nil
             } else if let old = figures.removeValue(forKey: p.key) {
-                // Changed state while on show: jump over.
-                let from = Self.onScreen(old.box)
+                let here = Self.onScreen(old.box), angle = Self.rotation(old.body)
                 old.box.removeFromSuperlayer()
                 old.landing.forEach { $0.removeFromSuperlayer() }
-                fly(&f, from: from, color: WingLayout.color(old.group), delay: 0.07 * Double(flights), now: now)
-                flights += 1
+                if old.hiddenUntil > now {
+                    // It never showed: pop in where it belongs now.
+                    pop(&f, delay: old.hiddenUntil - now, burst: false, now: now)
+                } else {
+                    // Changed state while on show: jump over, carrying on from mid-air if it was jumping.
+                    let airborne = old.busyUntil > now
+                    fly(&f, from: here, color: WingLayout.color(old.group), delay: airborne ? 0 : 0.12 * Double(flights),
+                        angle: airborne ? angle : 0, airborne: airborne, now: now)
+                    if !airborne { flights += 1 }
+                }
             } else if let was = wasIn[p.key], let more = mores[was] {
                 // Out of a "+N": from its own group's, or jumping over from another's.
                 let from = CGPoint(x: more.x, y: f.box.position.y)
                 if was == g {
                     pop(&f, delay: 0, burst: false, now: now, from: from)
                 } else {
-                    fly(&f, from: from, color: WingLayout.color(was), delay: 0.07 * Double(flights), now: now)
+                    fly(&f, from: from, color: WingLayout.color(was), delay: 0.12 * Double(flights), now: now)
                     flights += 1
                 }
             } else {
@@ -195,7 +204,10 @@ final class WingAnimator {
 
         // What showed before and doesn't now: squeezed into a "+N", or gone.
         for (key, old) in figures {
-            if let g = groupOf[key], let more = newMores[g] {
+            if !animate || old.hiddenUntil > now {
+                old.box.removeFromSuperlayer()
+                old.landing.forEach { $0.removeFromSuperlayer() }
+            } else if let g = groupOf[key], let more = newMores[g] {
                 sink(old, into: more, now: now)
                 if let label = moreLayers[g] { bump(label, at: now + 0.3) }
             } else {
@@ -206,7 +218,6 @@ final class WingAnimator {
         figures = kept
         members = next
         mores = newMores
-        if !kept.isEmpty { primed = true }
         scheduleSweep(now: now)
     }
 
@@ -240,6 +251,11 @@ final class WingAnimator {
                 self.scheduleSweep(now: CACurrentMediaTime())
             }
         }
+    }
+
+    /// How far a figure has turned right now, mid-flip or not.
+    private static func rotation(_ layer: CALayer) -> Double {
+        (layer.presentation()?.value(forKeyPath: "transform.rotation.z") as? NSNumber)?.doubleValue ?? 0
     }
 
     /// Where a figure shows right now, mid-move or not.
@@ -300,33 +316,37 @@ final class WingAnimator {
 
     /// The state change: crouch, a flipping jump from `from` that turns from `color` into the new
     /// group's color and trails sparks, then a squashed landing that throws off a burst.
-    private func fly(_ f: inout Figure, from: CGPoint, color old: NSColor, delay: CFTimeInterval, now: CFTimeInterval) {
+    /// From mid-air (`airborne`), it skips the crouch and carries on from `angle`.
+    private func fly(_ f: inout Figure, from: CGPoint, color old: NSColor, delay: CFTimeInterval, angle: Double = 0,
+                     airborne: Bool = false, now: CFTimeInterval) {
         let to = f.box.position
         let new = WingLayout.color(f.group)
         let dx = to.x - from.x
-        let crouch = 0.1, air = 0.42 + min(abs(dx) / 600, 0.18), land = 0.2
+        let crouch = airborne ? 0.01 : 0.1, air = 0.42 + min(abs(dx) / 600, 0.18), land = 0.2
         let total = crouch + air + land
         let begin = now + delay
         // As high as the menu bar leaves room for above the figure.
         let top = f.body.frame.maxY
         let lift = max(3, min(9, height - top + 1))
-        let spin = dx > 0.5 ? -2 * Double.pi : 2 * Double.pi
+        // At least half a turn on, ending upright.
+        let turn = 2 * Double.pi
+        let end = dx > 0.5 ? turn * ((angle - Double.pi) / turn).rounded(.down) : turn * ((angle + Double.pi) / turn).rounded(.up)
 
         func at(_ u: Double) -> CGPoint {
             let s = u * u * (3 - 2 * u)
             return CGPoint(x: from.x + dx * s, y: from.y + (to.y - from.y) * s + 4 * lift * u * (1 - u))
         }
         let steps = 24
-        var times: [NSNumber] = [0], points: [NSValue] = [NSValue(point: from)], angles: [Double] = [0]
+        var times: [NSNumber] = [0], points: [NSValue] = [NSValue(point: from)], angles: [Double] = [angle]
         for i in 0...steps {
             let u = Double(i) / Double(steps)
             times.append(NSNumber(value: (crouch + air * u) / total))
             points.append(NSValue(point: at(u)))
-            angles.append(spin * u * u * (3 - 2 * u))
+            angles.append(angle + (end - angle) * u * u * (3 - 2 * u))
         }
         times.append(1)
         points.append(NSValue(point: to))
-        angles.append(spin)
+        angles.append(end)
 
         let path = CAKeyframeAnimation(keyPath: "position")
         path.values = points
@@ -336,10 +356,10 @@ final class WingAnimator {
         let marks: [Double] = [0, crouch, crouch + 0.07, crouch + air * 0.5, touch, touch + 0.06, touch + 0.13, total]
         let squashTimes = marks.map { NSNumber(value: $0 / total) }
         let sx = CAKeyframeAnimation(keyPath: "transform.scale.x")
-        sx.values = [1, 1.25, 0.85, 1, 1, 1.35, 0.92, 1]
+        sx.values = [1, airborne ? 1 : 1.25, airborne ? 1 : 0.85, 1, 1, 1.35, 0.92, 1]
         sx.keyTimes = squashTimes
         let sy = CAKeyframeAnimation(keyPath: "transform.scale.y")
-        sy.values = [1, 0.7, 1.25, 1, 1, 0.6, 1.08, 1]
+        sy.values = [1, airborne ? 1 : 0.7, airborne ? 1 : 1.25, 1, 1, 0.6, 1.08, 1]
         sy.keyTimes = squashTimes
         let jump = CAAnimationGroup()
         jump.animations = [path, sx, sy]
@@ -384,6 +404,7 @@ final class WingAnimator {
         grow.beginTime = now + delay
         grow.fillMode = .backwards
         f.box.add(grow, forKey: "pop")
+        f.hiddenUntil = now + delay
         if let from {
             let move = CABasicAnimation(keyPath: "position")
             move.fromValue = NSValue(point: from)

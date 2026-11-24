@@ -240,6 +240,16 @@ final class Store: ObservableObject {
     private var lastKnown: Set<Int>?
 
     var connected: Bool { !connectedSources.isEmpty }
+
+    /// How many servers are configured.
+    var expectedSources = 0
+    private let startedAt = Date()
+    /// Every server has sent its first snapshot and environment (or launch was a while ago), so
+    /// changes from here on are agents changing, not servers checking in.
+    var settled: Bool {
+        (0..<expectedSources).allSatisfy { sources[$0] != nil && environments[$0] != nil }
+            || Date().timeIntervalSince(startedAt) > 10
+    }
     var threadCount: Int { sources.values.reduce(0) { $0 + $1.count } }
 
     func setConnected(_ source: Int, _ isConnected: Bool) {

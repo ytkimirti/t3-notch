@@ -20,6 +20,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             exit(0)
         }
         style = config.wingStyle
+        store.expectedSources = config.allServers.count
         clients = config.allServers.enumerated().map { T3Client(server: $1, source: $0, store: store) }
         clients.forEach { $0.start() }
 
