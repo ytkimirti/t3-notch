@@ -265,6 +265,23 @@ let readOnly = WingLayout(style: .critters, running: 12, waiting: 0, done: 0, re
 check(readOnly.items.filter { $0.item == .dozer }.count == 1 && readOnly.items.contains { $0.item == .more(4, .read) },
       "read keeps one figure when the rest is full")
 
+MainActor.assumeIsolated {
+    // The same server configured twice: its figures keep their keys when the other copy takes over.
+    let store = Store()
+    var a = true, b = true
+    let run: [String: Any] = ["id": "r", "status": "running", "latestRunId": "r"]
+    let finished: [String: Any] = ["id": "d", "status": "completed", "latestRunId": "d",
+                                   "latestRunCompletedAt": at(-5), "lastVisitedAt": at(-10)]
+    store.apply(["kind": "snapshot", "snapshot": ["threads": [run, finished]]], firstSnapshot: &a, source: 0)
+    store.apply(["kind": "snapshot", "snapshot": ["threads": [run, finished]]], firstSnapshot: &b, source: 1)
+    store.environments = [0: "env", 1: "env"]
+    store.setConnected(0, true); store.setConnected(1, true)
+    let before = store.wingKeys
+    store.setConnected(0, false)
+    check(store.wingKeys == before && before.running.count == 1 && before.done.count == 1,
+          "a reconnect keeps a doubled server's figures")
+}
+
 // The animator follows each thread's figure from update to update.
 MainActor.assumeIsolated {
     let animator = WingAnimator(live: false)

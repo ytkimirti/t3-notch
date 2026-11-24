@@ -39,11 +39,6 @@ struct WingLayout: Equatable {
             case .more(_, let group): group
             }
         }
-
-        var isMore: Bool {
-            if case .more = self { return true }
-            return false
-        }
     }
     struct Placed: Equatable {
         let item: Item

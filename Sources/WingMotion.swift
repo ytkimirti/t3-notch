@@ -45,7 +45,6 @@ final class WingAnimator {
         var hiddenUntil: CFTimeInterval = 0
         /// The burst waiting for it at the end of a jump, moved along if the jump is redirected.
         var landing: [CALayer] = []
-        var landingColor: NSColor?
     }
 
     private let stage = CALayer()
@@ -142,10 +141,13 @@ final class WingAnimator {
             placed.append((list[i], p.item, x, p.width))
         }
 
-        // Neighbors wait for a jumper to leave the ground before they close up behind it.
-        let jumping = placed.contains { p in
-            (figures[p.key].map { $0.group != p.item.group } ?? false) || (wasIn[p.key].map { $0 != p.item.group } ?? false)
-        }
+        // Neighbors wait for the last jumper (they go 0.12s apart) to leave the ground before they
+        // close up behind it.
+        let jumpers = placed.filter { p in
+            (figures[p.key].map { $0.group != p.item.group && $0.busyUntil <= now } ?? false)
+                || (figures[p.key] == nil && wasIn[p.key].map { $0 != p.item.group } ?? false)
+        }.count
+        let makeRoom = jumpers == 0 ? 0 : 0.14 + 0.12 * Double(jumpers - 1)
         // Figures that stay in their group keep their layers (and their animations' phases).
         var kept: [String: Figure] = [:]
         var usedIndex: [WingLayout.Group: Set<Int>] = [:]
@@ -153,7 +155,7 @@ final class WingAnimator {
             guard var f = figures[p.key], f.group == p.item.group else { continue }
             figures[p.key] = nil
             let to = CGPoint(x: p.x + p.width / 2, y: f.box.position.y)
-            if animate { slide(&f, to: to, delay: jumping ? 0.14 : 0, now: now) } else { f.box.position = to }
+            if animate { slide(&f, to: to, delay: makeRoom, now: now) } else { f.box.position = to }
             kept[p.key] = f
             usedIndex[f.group, default: []].insert(f.index)
         }
@@ -276,31 +278,19 @@ final class WingAnimator {
         return Figure(group: item.group, index: index, box: box, body: body)
     }
 
-    /// Makes room: a soft spring sideways, or, mid-jump, a quick glide to the new spot.
+    /// Makes room: a soft spring sideways. A figure still on the move carries its jump on from
+    /// where it is to the new spot instead.
     private func slide(_ f: inout Figure, to: CGPoint, delay: CFTimeInterval, now: CFTimeInterval) {
         let from = f.box.position
         guard from != to else { return }
-        f.box.position = to
         if f.busyUntil > now {
-            // Mid-jump or mid-glide: head for the new spot in the time it had left, still flipping,
-            // and move the landing burst along.
-            let here = Self.onScreen(f.box)
-            let left = max(f.busyUntil - now, 0.25)
-            f.box.removeAnimation(forKey: "flight")
-            let glide = CABasicAnimation(keyPath: "position")
-            glide.fromValue = NSValue(point: here)
-            glide.toValue = NSValue(point: to)
-            glide.duration = left
-            glide.beginTime = now
-            glide.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-            f.box.add(glide, forKey: "flight")
-            f.busyUntil = now + left
+            let here = Self.onScreen(f.box), angle = Self.rotation(f.body)
             f.landing.forEach { $0.removeFromSuperlayer() }
-            f.landing = f.landingColor.map {
-                burst(at: CGPoint(x: to.x, y: to.y + 2), color: $0, count: 8, reach: 10, begin: now + left)
-            } ?? []
+            f.box.position = to
+            fly(&f, from: here, color: WingLayout.color(f.group), delay: 0, angle: angle, airborne: true, now: now)
             return
         }
+        f.box.position = to
         let spring = CASpringAnimation(keyPath: "position.x")
         spring.isAdditive = true
         spring.fromValue = from.x - to.x
@@ -389,7 +379,6 @@ final class WingAnimator {
                   begin: begin + crouch + air * u, duration: 0.32)
         }
         f.landing = burst(at: CGPoint(x: to.x, y: to.y + 2), color: new, count: 8, reach: 10, begin: begin + crouch + air)
-        f.landingColor = new
     }
 
     /// A new agent grows out of the ground with a wobble.
@@ -488,8 +477,11 @@ final class WingAnimator {
     private func recolor(_ layer: CALayer, from: NSColor, to: NSColor, begin: CFTimeInterval, duration: CFTimeInterval,
                          hideFrom: CFTimeInterval, hideUntil: CFTimeInterval) {
         let target = to.cgColor
+        // Redirected mid-jump: any color change already under way carries on.
+        let recoloring = from != to
         func walk(_ l: CALayer) {
-            if let shape = l as? CAShapeLayer, shape.fillColor == target {
+            if !recoloring {
+            } else if let shape = l as? CAShapeLayer, shape.fillColor == target {
                 l.add(fade("fillColor", from, to, begin, duration), forKey: "recolor")
             } else if l.backgroundColor == target {
                 l.add(fade("backgroundColor", from, to, begin, duration), forKey: "recolor")

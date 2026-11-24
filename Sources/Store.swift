@@ -217,8 +217,14 @@ final class Store: ObservableObject {
     var finished: [AgentThread] { woke + done + read }
     /// Which thread each wing figure stands for.
     var wingKeys: WingKeys {
-        WingKeys(running: runningKeys, waiting: waitingKeys, woke: woke.map(\.key), done: done.map(\.key),
-                 read: read.map(\.key))
+        WingKeys(running: runningKeys, waiting: waitingKeys, woke: woke.map(figureKey), done: done.map(figureKey),
+                 read: read.map(figureKey))
+    }
+
+    /// A thread's figure's key: by environment where known, so a server configured twice keeps the
+    /// same figures when its other copy takes over (say, on a reconnect).
+    private func figureKey(_ t: AgentThread) -> String {
+        environments[t.source].map { "\($0)/\(t.id)" } ?? t.key
     }
     @Published private(set) var projects: [String: String] = [:]
     /// Servers with a live subscription.
@@ -244,6 +250,14 @@ final class Store: ObservableObject {
     /// How many servers are configured.
     var expectedSources = 0
     private let startedAt = Date()
+    private var settleTimer: Timer?
+
+    init() {
+        // Tell the view once launch is over, even if a server never checked in.
+        settleTimer = Timer.scheduledTimer(withTimeInterval: 10.2, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated { self?.objectWillChange.send() }
+        }
+    }
     /// Every server has sent its first snapshot and environment (or launch was a while ago), so
     /// changes from here on are agents changing, not servers checking in.
     var settled: Bool {
@@ -323,8 +337,8 @@ final class Store: ObservableObject {
             t.shownUnderParent = t.delegatedFrom.map(parents.contains) ?? false
             return t
         }
-        let running = all.filter(\.isRunning).map(\.key).sorted()
-        let waiting = all.filter { $0.isWaiting(now: now) }.map(\.key).sorted()
+        let running = all.filter(\.isRunning).map(figureKey).sorted()
+        let waiting = all.filter { $0.isWaiting(now: now) }.map(figureKey).sorted()
         // Ties break by key, so rows don't swap under the pointer as other threads change.
         func newestFirst(_ a: (Date?, AgentThread), _ b: (Date?, AgentThread)) -> Bool {
             let x = a.0 ?? .distantPast, y = b.0 ?? .distantPast
