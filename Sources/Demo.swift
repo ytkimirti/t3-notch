@@ -52,6 +52,9 @@ enum Demo {
         ]
     }()
 
+    /// One figure for every gag: shades and headphones, cigar and paper, coffee, bubble, dream.
+    static let gags = [Beat(running: ["a", "b"], waiting: ["c", "d"], woke: ["e"], done: ["f"], read: ["g"], seconds: 12)]
+
     static func run(to dir: String) {
         let store = demoStore()
         for style in WingStyle.allCases {
@@ -68,6 +71,16 @@ enum Demo {
             let frames = render(style: style, beats: beats, store: store, to: out)
             print("wrote \(frames) frames to \(out)")
         }
+        // The easter eggs, a few seconds apart instead of minutes, so one GIF shows them all.
+        let out = "\(dir)/gags"
+        try? FileManager.default.createDirectory(atPath: out, withIntermediateDirectories: true)
+        for name in (try? FileManager.default.contentsOfDirectory(atPath: out)) ?? [] where name.hasPrefix("frame-") {
+            try? FileManager.default.removeItem(atPath: "\(out)/\(name)")
+        }
+        WingLayout.gagGap = 1.5
+        defer { WingLayout.gagGap = nil }
+        let frames = render(style: .critters, beats: gags, store: store, to: out)
+        print("wrote \(frames) frames to \(out)")
     }
 
     /// Six threads for the list, as the story's last beats show them: one woken from a snooze,

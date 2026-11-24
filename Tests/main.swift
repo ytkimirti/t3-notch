@@ -310,5 +310,32 @@ MainActor.assumeIsolated {
     check(Set(animator.positions.keys).count == animator.positions.count, "one figure per thread")
 }
 
+// Gags: every critter has one, and its stepped tracks hold a value per key time, in order.
+do {
+    var seen = Set<String>()
+    func walk(_ layer: CALayer, _ name: String) -> Int {
+        var count = 0
+        if let group = layer.animation(forKey: "gag") as? CAAnimationGroup {
+            count += 1
+            for case let k as CAKeyframeAnimation in group.animations ?? [] {
+                let times = (k.keyTimes ?? []).map(\.doubleValue)
+                check(times.count == (k.values?.count ?? 0) + 1, "\(name) \(k.keyPath ?? "") has a value per step")
+                check(times.first == 0 && times.last == 1 && zip(times, times.dropFirst()).allSatisfy { $0 <= $1 },
+                      "\(name) \(k.keyPath ?? "") key times run 0 to 1 in order")
+            }
+        }
+        return count + (layer.sublayers ?? []).reduce(0) { $0 + walk($1, name) }
+    }
+    for item in [WingLayout.Item.runner, .waiter, .waker, .sleeper, .dozer] {
+        for index in 0..<4 {
+            let gag = WingLayout.gag(for: item.group, index: index)
+            seen.insert("\(gag)")
+            check(walk(WingLayout.figure(item, x: 0, height: 32, index: index), "\(gag)") > 0, "\(gag) plays")
+        }
+    }
+    check(seen.count == WingLayout.Gag.allCases.count, "every gag has a critter")
+    check(walk(WingLayout.figure(.bar, x: 0, height: 32, index: 0), "bar") == 0, "bars have no gags")
+}
+
 print(failures == 0 ? "all tests passed" : "\(failures) failed")
 exit(failures == 0 ? 0 : 1)

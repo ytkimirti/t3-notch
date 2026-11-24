@@ -274,6 +274,8 @@ struct WingLayout: Equatable {
                 root.addSublayer(z(at: CGPoint(x: size.width - 3, y: size.height - 6), size: 7, rise: rise, period: 2.2,
                                    offset: phase(index, 2.2) + 1.1))
             }
+            addGag(gag(for: group, index: index), root: root, body: bodyLayer, eyes: eyes, color: color, index: index,
+                   headroom: headroom)
             return root
         }
 
@@ -331,6 +333,8 @@ struct WingLayout: Equatable {
         case .done, .read:
             break // asleep, handled above
         }
+        addGag(gag(for: group, index: index), root: root, body: bodyLayer, eyes: eyes, color: color, index: index,
+               headroom: headroom)
         return root
     }
 
@@ -356,7 +360,7 @@ struct WingLayout: Equatable {
     }
 
     /// Jumps between values at the given key times (one more than values, from 0 to 1).
-    private static func keys(_ keyPath: String, _ values: [Double], _ times: [NSNumber]) -> CAKeyframeAnimation {
+    static func keys(_ keyPath: String, _ values: [Double], _ times: [NSNumber]) -> CAKeyframeAnimation {
         let k = CAKeyframeAnimation(keyPath: keyPath)
         k.values = values
         k.keyTimes = times
@@ -420,14 +424,14 @@ struct WingLayout: Equatable {
     /// Where figure `index` starts in a cycle of `period` seconds: each of ten neighbouring figures
     /// in a group gets its own tenth of the cycle, and the first few sit far apart. Each further
     /// run of ten shifts by a hundredth, so a long wing doesn't repeat every ten figures.
-    private static func phase(_ index: Int, _ period: CFTimeInterval) -> CFTimeInterval {
+    static func phase(_ index: Int, _ period: CFTimeInterval) -> CFTimeInterval {
         let tenths = [0, 5, 2, 7, 4, 9, 1, 6, 3, 8]
         let run = Double(tenths[(index / 10) % tenths.count]) / 10
         return (Double(tenths[index % tenths.count]) + run) / 10 * period
     }
 
     /// Groups animations into one forever-repeating cycle, phase-shifted by `offset` seconds.
-    private static func loop(_ animations: [CAAnimation], duration: CFTimeInterval, offset: CFTimeInterval) -> CAAnimationGroup {
+    static func loop(_ animations: [CAAnimation], duration: CFTimeInterval, offset: CFTimeInterval) -> CAAnimationGroup {
         let g = CAAnimationGroup()
         animations.forEach { $0.duration = duration }
         g.animations = animations
