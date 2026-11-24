@@ -203,8 +203,11 @@ private func parseDate(_ value: Any?) -> Date? {
 /// Threads from every configured T3 server, counted together.
 @MainActor
 final class Store: ObservableObject {
-    @Published private(set) var runningCount = 0
-    @Published private(set) var waitingCount = 0
+    /// Keys of the agents at work and waiting, sorted, so they change only when the agents do.
+    @Published private(set) var runningKeys: [String] = []
+    @Published private(set) var waitingKeys: [String] = []
+    var runningCount: Int { runningKeys.count }
+    var waitingCount: Int { waitingKeys.count }
     @Published private(set) var done: [AgentThread] = []
     /// Woken from a snooze since you last opened them.
     @Published private(set) var woke: [AgentThread] = []
@@ -212,6 +215,11 @@ final class Store: ObservableObject {
     @Published private(set) var read: [AgentThread] = []
     /// Everything the list shows, in the wing's order: woken, done, read.
     var finished: [AgentThread] { woke + done + read }
+    /// Which thread each wing figure stands for.
+    var wingKeys: WingKeys {
+        WingKeys(running: runningKeys, waiting: waitingKeys, woke: woke.map(\.key), done: done.map(\.key),
+                 read: read.map(\.key))
+    }
     @Published private(set) var projects: [String: String] = [:]
     /// Servers with a live subscription.
     @Published private(set) var connectedSources: Set<Int> = []
@@ -305,8 +313,8 @@ final class Store: ObservableObject {
             t.shownUnderParent = t.delegatedFrom.map(parents.contains) ?? false
             return t
         }
-        let running = all.filter(\.isRunning).count
-        let waiting = all.filter { $0.isWaiting(now: now) }.count
+        let running = all.filter(\.isRunning).map(\.key).sorted()
+        let waiting = all.filter { $0.isWaiting(now: now) }.map(\.key).sorted()
         // Ties break by key, so rows don't swap under the pointer as other threads change.
         func newestFirst(_ a: (Date?, AgentThread), _ b: (Date?, AgentThread)) -> Bool {
             let x = a.0 ?? .distantPast, y = b.0 ?? .distantPast
@@ -320,8 +328,8 @@ final class Store: ObservableObject {
         }
         let unseen = all.filter { $0.isUnseenDone(now: now) && !$0.isWoke(now: now) }.sorted(by: latestFirst)
         let seen = all.filter { $0.isRead(now: now) }.sorted(by: latestFirst)
-        if running != runningCount { runningCount = running }
-        if waiting != waitingCount { waitingCount = waiting }
+        if running != runningKeys { runningKeys = running }
+        if waiting != waitingKeys { waitingKeys = waiting }
         if wokeNow != woke { woke = wokeNow }
         if unseen != done { done = unseen }
         if seen != read { read = seen }

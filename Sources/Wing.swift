@@ -28,6 +28,22 @@ struct WingLayout: Equatable {
     enum Item: Equatable {
         case runner, waiter, waker, sleeper, dozer, bar, idleBar, wokeBar, restingBar, readBar
         case more(Int, Group)
+
+        var group: Group {
+            switch self {
+            case .runner, .bar: .running
+            case .waiter, .idleBar: .waiting
+            case .waker, .wokeBar: .woke
+            case .sleeper, .restingBar: .done
+            case .dozer, .readBar: .read
+            case .more(_, let group): group
+            }
+        }
+
+        var isMore: Bool {
+            if case .more = self { return true }
+            return false
+        }
     }
     struct Placed: Equatable {
         let item: Item
@@ -149,53 +165,49 @@ struct WingLayout: Equatable {
         }
     }
 
-    /// Fills `root` (y-up, `height` tall) with the wing's layers and their animations.
+    /// Fills `root` (y-up, `height` tall) with the wing's layers and their animations, all at once.
+    /// The app goes through `WingAnimator` instead, which animates changes.
     func build(into root: CALayer, height: CGFloat) {
         root.sublayers?.forEach { $0.removeFromSuperlayer() }
-        var runnerIndex = 0, waiterIndex = 0, wakerIndex = 0, sleeperIndex = 0, dozerIndex = 0
-        var barIndex = 0, idleIndex = 0, wokeBarIndex = 0
+        var index: [Group: Int] = [:]
         for p in items {
-            switch p.item {
-            case .runner:
-                root.addSublayer(Self.critter(x: p.x, height: height, group: .running, index: runnerIndex))
-                runnerIndex += 1
-            case .waiter:
-                root.addSublayer(Self.critter(x: p.x, height: height, group: .waiting, index: waiterIndex))
-                waiterIndex += 1
-            case .waker:
-                root.addSublayer(Self.critter(x: p.x, height: height, group: .woke, index: wakerIndex))
-                wakerIndex += 1
-            case .sleeper:
-                root.addSublayer(Self.critter(x: p.x, height: height, group: .done, index: sleeperIndex))
-                sleeperIndex += 1
-            case .dozer:
-                root.addSublayer(Self.critter(x: p.x, height: height, group: .read, index: dozerIndex))
-                dozerIndex += 1
-            case .bar:
-                root.addSublayer(Self.bar(x: p.x, height: height, index: barIndex))
-                barIndex += 1
-            case .idleBar:
-                root.addSublayer(Self.idleBar(x: p.x, height: height, color: grey, index: idleIndex))
-                idleIndex += 1
-            case .wokeBar:
-                root.addSublayer(Self.idleBar(x: p.x, height: height, color: orange, index: wokeBarIndex))
-                wokeBarIndex += 1
-            case .restingBar, .readBar:
-                let bar = CALayer()
-                bar.frame = CGRect(x: p.x, y: (height - 4) / 2, width: Self.barWidth, height: 4)
-                bar.backgroundColor = (p.item == .readBar ? dimGreen : green).cgColor
-                bar.cornerRadius = 1.5
-                root.addSublayer(bar)
-            case .more(let n, let group):
-                let text = CATextLayer()
-                text.string = "+\(n)"
-                text.font = Self.moreFont
-                text.fontSize = Self.moreFont.pointSize
-                text.foregroundColor = Self.color(group).cgColor
-                text.contentsScale = 2
-                text.frame = CGRect(x: p.x, y: (height - 13) / 2, width: p.width + 1, height: 13)
-                root.addSublayer(text)
+            if case .more(let n, let group) = p.item {
+                root.addSublayer(Self.moreLabel(n, group: group, x: p.x, width: p.width, height: height))
+                continue
             }
+            let i = index[p.item.group, default: 0]
+            index[p.item.group] = i + 1
+            root.addSublayer(Self.figure(p.item, x: p.x, height: height, index: i))
+        }
+    }
+
+    /// A "+N" for the agents of `group` that don't fit.
+    static func moreLabel(_ n: Int, group: Group, x: CGFloat, width: CGFloat, height: CGFloat) -> CATextLayer {
+        let text = CATextLayer()
+        text.string = "+\(n)"
+        text.font = moreFont
+        text.fontSize = moreFont.pointSize
+        text.foregroundColor = color(group).cgColor
+        text.contentsScale = 2
+        text.frame = CGRect(x: x, y: (height - 13) / 2, width: width + 1, height: 13)
+        return text
+    }
+
+    /// One agent's figure at `x`, the `index`th of its group (which staggers its animations).
+    static func figure(_ item: Item, x: CGFloat, height: CGFloat, index: Int) -> CALayer {
+        switch item {
+        case .runner, .waiter, .waker, .sleeper, .dozer:
+            return critter(x: x, height: height, group: item.group, index: index)
+        case .bar:
+            return bar(x: x, height: height, index: index)
+        case .idleBar, .wokeBar:
+            return idleBar(x: x, height: height, color: color(item.group), index: index)
+        case .restingBar, .readBar, .more:
+            let bar = CALayer()
+            bar.frame = CGRect(x: x, y: (height - 4) / 2, width: barWidth, height: 4)
+            bar.backgroundColor = color(item.group).cgColor
+            bar.cornerRadius = 1.5
+            return bar
         }
     }
 
@@ -439,10 +451,19 @@ struct WingLayout: Equatable {
 /// per-frame work (a SwiftUI animation here redrew at 120 Hz, about 9% CPU).
 struct WingView: NSViewRepresentable {
     let layout: WingLayout
+    let keys: WingKeys
     let height: CGFloat
 
     final class Host: NSView {
-        var built: (WingLayout, CGFloat)?
+        let animator = WingAnimator()
+        var built: (WingLayout, WingKeys, CGFloat)?
+
+        /// The figures hang from the right edge, which stays put beside the notch while SwiftUI
+        /// springs the wing wider or narrower.
+        override func setFrameSize(_ newSize: NSSize) {
+            super.setFrameSize(newSize)
+            animator.pin(toRightEdge: newSize.width)
+        }
     }
 
     func makeNSView(context: Context) -> Host {
@@ -452,9 +473,9 @@ struct WingView: NSViewRepresentable {
     }
 
     func updateNSView(_ view: Host, context: Context) {
-        if let built = view.built, built.0 == layout, built.1 == height { return }
-        view.built = (layout, height)
+        if let built = view.built, built.0 == layout, built.1 == keys, built.2 == height { return }
+        view.built = (layout, keys, height)
         guard let root = view.layer else { return }
-        layout.build(into: root, height: height)
+        view.animator.update(root: root, layout: layout, keys: keys, height: height, now: CACurrentMediaTime())
     }
 }

@@ -3,7 +3,7 @@
 Your [T3 Code](https://github.com/ytkimirti/t3code) agents, living in the MacBook notch.
 
 <p align="center">
-  <img src="docs/critters.gif" width="704" alt="Pixel critters in a black wing grown out of the notch: blue ones trot and kick up dust while their agents work, a grey one glances around and taps its feet while it waits, an orange one nudges now and then after waking from a snooze, green ones doze under floating z's once finished, and dim ones breathe quietly once read. Hovering the notch opens a list of the threads.">
+  <img src="docs/critters.gif" width="704" alt="Pixel critters in a black wing grown out of the notch: blue ones trot and kick up dust while their agents work, a grey one glances around and taps its feet while it waits, an orange one nudges now and then after waking from a snooze, green ones doze under floating z's once finished, and dim ones breathe quietly once read. New agents pop in, a finishing agent flips over to its new spot, changing color in the air, and finished subagents puff away. Hovering the notch opens a list of the threads.">
 </p>
 
 A black wing grows out of the notch's left edge with one figure per agent:
@@ -13,6 +13,10 @@ A black wing grows out of the notch's left edge with one figure per agent:
 - **Orange** once it woke from a snooze and you haven't looked yet.
 - **Green** once it finished and you haven't looked yet.
 - **Dim green** once it's finished and you've seen it, until you settle it or write again.
+
+When an agent changes state, its figure crouches and jumps in a flip over to its new group,
+changing color in the air and landing with a burst. New agents pop in, ones that are gone (settled,
+or a subagent that finished) puff away, and the rest slide over to make room.
 
 The wing can grow all the way to the screen's left edge, over the app menus. When more agents
 run than fit, every group with agents keeps at least one figure, and a group with more than it

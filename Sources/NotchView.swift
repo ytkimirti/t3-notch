@@ -49,6 +49,18 @@ final class NotchState: ObservableObject {
         return layout
     }
 
+    /// The wing's last two widths. Not published: the view reads it while drawing.
+    private var wingTrend: (from: CGFloat, to: CGFloat) = (0, 0)
+
+    /// Whether the wing just got narrower, so it can wait for its leavers to finish their exits.
+    func wingShrinks(_ wing: CGFloat) -> Bool {
+        if wing != wingTrend.to { wingTrend = (wingTrend.to, wing) }
+        return wingTrend.to < wingTrend.from
+    }
+
+    /// How long a narrowing wing waits, so the figures leaving it puff away inside it.
+    static let shrinkDelay: Double = 0.3
+
     /// How far left of the notch the list may reach; a longer wing runs on past it.
     static let listReach: CGFloat = 300
 
@@ -158,6 +170,7 @@ struct NotchView: View {
         let rect = state.shapeRect(running: running, waiting: waiting, woke: woke, done: done, read: read)
         let wing = state.wingWidth(running: running, waiting: waiting, woke: woke, done: done, read: read)
         let visible = state.expanded || wing > 0
+        let shrinks = state.wingShrinks(wing)
 
         let strip = state.collapsedRect(running: running, waiting: waiting, woke: woke, done: done, read: read)
 
@@ -181,7 +194,7 @@ struct NotchView: View {
                 // ImageRenderer can't draw AppKit views; `--render` composites the layers itself.
                 if renderDir == nil {
                     WingView(layout: state.wingLayout(running: running, waiting: waiting, woke: woke, done: done, read: read),
-                             height: g.notchHeight)
+                             keys: store.wingKeys, height: g.notchHeight)
                 } else {
                     Color.clear
                 }
@@ -199,7 +212,7 @@ struct NotchView: View {
         }
         .frame(width: g.panelSize.width, height: g.panelSize.height, alignment: .topLeading)
         .animation(.spring(response: 0.18, dampingFraction: 0.86), value: state.expanded)
-        .animation(.spring(response: 0.32, dampingFraction: 0.82), value: wing)
+        .animation(.spring(response: 0.32, dampingFraction: 0.82).delay(shrinks ? NotchState.shrinkDelay : 0), value: wing)
         .environment(\.colorScheme, .dark)
     }
 }

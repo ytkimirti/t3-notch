@@ -10,31 +10,47 @@ import UniformTypeIdentifiers
 @MainActor
 enum Demo {
     struct Beat {
-        var running = 0, waiting = 0, woke = 0, done = 0, read = 0
+        /// Made-up agents by name, so a figure can follow an agent from group to group.
+        var running: [String] = [], waiting: [String] = [], woke: [String] = [], done: [String] = [], read: [String] = []
         var seconds: Double
         /// The cursor rests on the notch.
         var hover = false
         /// The list is open.
         var expanded = false
+
+        var keys: WingKeys { WingKeys(running: running, waiting: waiting, woke: woke, done: done, read: read) }
+
+        @MainActor func layout(_ state: NotchState) -> WingLayout {
+            state.wingLayout(running: running.count, waiting: waiting.count, woke: woke.count, done: done.count,
+                             read: read.count)
+        }
     }
 
     static let fps = 25.0
     static let scale: CGFloat = 2
 
-    /// Agents start, one waits on its subagents, they finish, more than ten pile up, a snoozed one
-    /// wakes, then a hover opens the list.
-    static let story: [Beat] = [
-        Beat(running: 1, seconds: 1.2),
-        Beat(running: 3, seconds: 1.4),
-        Beat(running: 4, waiting: 1, seconds: 1.4),
-        Beat(running: 3, waiting: 1, done: 2, seconds: 1.6),
-        Beat(running: 8, waiting: 2, done: 3, seconds: 2.2),
-        Beat(running: 4, waiting: 1, done: 3, read: 2, seconds: 1.4),
-        Beat(running: 3, waiting: 1, woke: 1, done: 3, read: 2, seconds: 2.6),
-        Beat(running: 3, waiting: 1, woke: 1, done: 3, read: 2, seconds: 0.5, hover: true),
-        Beat(running: 3, waiting: 1, woke: 1, done: 3, read: 2, seconds: 2.8, hover: true, expanded: true),
-        Beat(running: 3, waiting: 1, woke: 1, done: 3, read: 2, seconds: 0.8),
-    ]
+    /// Agents start, one waits on its subagents, they finish and jump over, more than ten pile up,
+    /// subagents puff away, you open one, a snoozed one wakes, then a hover opens the list.
+    static let story: [Beat] = {
+        let end = Beat(running: ["k", "j", "e"], waiting: ["a"], woke: ["s"], done: ["c", "i", "h"], read: ["b", "d"],
+                       seconds: 2.8)
+        var hover = end, open = end, leave = end
+        hover.seconds = 0.5
+        hover.hover = true
+        open.seconds = 2.8
+        open.hover = true
+        open.expanded = true
+        leave.seconds = 0.8
+        return [
+            Beat(running: ["a"], seconds: 1.2),
+            Beat(running: ["c", "b", "a"], seconds: 1.4),
+            Beat(running: ["e", "d", "c", "b"], waiting: ["a"], seconds: 1.6),
+            Beat(running: ["e", "c", "b"], waiting: ["a"], done: ["d"], seconds: 1.6),
+            Beat(running: ["m", "l", "k", "j", "i", "h", "e", "c"], waiting: ["a"], done: ["b", "d"], seconds: 2),
+            Beat(running: ["k", "j", "e", "c"], waiting: ["a"], done: ["i", "h", "b"], read: ["d"], seconds: 1.8),
+            end, hover, open, leave,
+        ]
+    }()
 
     static func run(to dir: String) {
         let store = demoStore()
@@ -95,8 +111,8 @@ enum Demo {
     private static func render(style: WingStyle, beats: [Beat], store: Store, to dir: String) -> Int {
         let notch = CGSize(width: 185, height: 32)
         let widestWing = beats.map {
-            NotchState.wingWidth(content: WingLayout(style: style, running: $0.running, waiting: $0.waiting, woke: $0.woke, done: $0.done,
-                                                 read: $0.read).width)
+            NotchState.wingWidth(content: WingLayout(style: style, running: $0.running.count, waiting: $0.waiting.count,
+                                                     woke: $0.woke.count, done: $0.done.count, read: $0.read.count).width)
         }.max() ?? 0
         let notchMinX = (20 + widestWing).rounded()
         let hovers = beats.contains(where: \.hover)
@@ -140,9 +156,12 @@ enum Demo {
         shape.contentsScale = scale
         scene.addSublayer(shape)
 
+        // The wing's figures hang from its right edge, beside the notch.
         let wing = CALayer()
         wing.anchorPoint = .zero
+        wing.position = CGPoint(x: notchMinX - NotchState.wingTrail, y: size.height - notch.height)
         scene.addSublayer(wing)
+        let animator = WingAnimator()
 
         // The list shows only inside the black shape, as it grows and shrinks.
         let clip = CALayer()
@@ -158,8 +177,8 @@ enum Demo {
         scene.addSublayer(hardware)
         if let shown = beats.first(where: \.expanded) {
             state.expanded = true
-            let open = state.shapeRect(running: shown.running, waiting: shown.waiting, woke: shown.woke, done: shown.done,
-                                       read: shown.read)
+            let open = state.shapeRect(running: shown.running.count, waiting: shown.waiting.count, woke: shown.woke.count,
+                                       done: shown.done.count, read: shown.read.count)
             let content = DoneList(store: store, done: store.finished, open: { _ in }, hide: {}, now: Date())
                 .frame(width: open.width - 20)
                 .environment(\.colorScheme, .dark)
@@ -207,28 +226,32 @@ enum Demo {
         renderer.bounds = root.frame
 
         // Eased toward their targets each frame, standing in for the app's SwiftUI springs.
-        var left = notchMinX, right = notchMinX + notch.width, bottom = notch.height, wingWidth: CGFloat = 0
+        var left = notchMinX, right = notchMinX + notch.width, bottom = notch.height
         var ear: CGFloat = 5, rightEar: CGFloat = 0, radius: CGFloat = 9, listOpacity: Float = 0
-        var built: [Int]?
+        var built: WingKeys?
         var cursorAt = rest
         let dt = 1 / fps
         let ease = { (tau: Double) in CGFloat(1 - exp(-dt / tau)) }
         let start: CFTimeInterval = 10 // media time; the wing's animations begin at 1
         var frame = 0
+        var previous: Beat?
         for beat in beats {
+            defer { previous = beat }
             state.expanded = beat.expanded
+            // As in the app, a narrowing wing waits for its leavers to puff away.
+            let held = previous.flatMap { p in
+                p.layout(state).width > beat.layout(state).width ? p : nil
+            }
             let from = cursorAt, to = beat.hover ? onNotch : rest
             let steps = Int((beat.seconds * fps).rounded())
             for step in 0..<steps {
-                let target = state.shapeRect(running: beat.running, waiting: beat.waiting, woke: beat.woke, done: beat.done,
-                                             read: beat.read)
-                let targetWing = state.wingWidth(running: beat.running, waiting: beat.waiting, woke: beat.woke, done: beat.done,
-                                                read: beat.read)
+                let sized = held.flatMap { Double(step) < NotchState.shrinkDelay * fps ? $0 : nil } ?? beat
+                let target = state.shapeRect(running: sized.running.count, waiting: sized.waiting.count, woke: sized.woke.count,
+                                             done: sized.done.count, read: sized.read.count)
                 let k = ease(0.06)
                 left += (target.minX - left) * k
                 right += (target.maxX - right) * k
                 bottom += (target.maxY - bottom) * k
-                wingWidth += (targetWing - wingWidth) * k
                 ear += ((beat.expanded ? 10 : 5) - ear) * k
                 rightEar += ((beat.expanded ? 10 : 0) - rightEar) * k
                 radius += ((beat.expanded ? 18 : 9) - radius) * k
@@ -245,22 +268,18 @@ enum Demo {
                     .path(in: rect).cgPath
                 shape.path = path.copy(using: &flip)
                 clipShape.path = shape.path
-                let counts = [beat.running, beat.waiting, beat.woke, beat.done, beat.read]
-                if built != counts {
-                    built = counts
-                    let layout = state.wingLayout(running: beat.running, waiting: beat.waiting, woke: beat.woke, done: beat.done,
-                                                  read: beat.read)
-                    wing.bounds = CGRect(x: 0, y: 0, width: layout.width, height: notch.height)
-                    layout.build(into: wing, height: notch.height)
+                let time = start + Double(frame) * dt
+                if built != beat.keys {
+                    built = beat.keys
+                    animator.update(root: wing, layout: beat.layout(state), keys: beat.keys, height: notch.height, now: time)
                 }
-                wing.position = CGPoint(x: notchMinX - wingWidth + NotchState.wingLead, y: size.height - notch.height)
                 list.opacity = listOpacity
                 list.frame.origin.x = left + 10
                 cursor.position = cursorAt
                 CATransaction.commit()
                 CATransaction.flush()
 
-                renderer.beginFrame(atTime: start + Double(frame) * dt, timeStamp: nil)
+                renderer.beginFrame(atTime: time, timeStamp: nil)
                 renderer.addUpdate(renderer.bounds)
                 renderer.render()
                 renderer.endFrame()
