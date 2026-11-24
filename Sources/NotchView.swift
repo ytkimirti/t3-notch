@@ -59,7 +59,7 @@ final class NotchState: ObservableObject {
     }
 
     /// How long a narrowing wing waits, so the figures leaving it puff away inside it.
-    static let shrinkDelay: Double = 0.3
+    static let shrinkDelay: Double = 0.36
 
     /// How far left of the notch the list may reach; a longer wing runs on past it.
     static let listReach: CGFloat = 300
@@ -170,7 +170,9 @@ struct NotchView: View {
         let rect = state.shapeRect(running: running, waiting: waiting, woke: woke, done: done, read: read)
         let wing = state.wingWidth(running: running, waiting: waiting, woke: woke, done: done, read: read)
         let visible = state.expanded || wing > 0
-        let shrinks = state.wingShrinks(wing)
+        // Without a notch the pill is centered and its right edge moves too, so waiting there would
+        // shift the figures twice.
+        let shrinks = state.wingShrinks(wing) && g.hasNotch
 
         let strip = state.collapsedRect(running: running, waiting: waiting, woke: woke, done: done, read: read)
 

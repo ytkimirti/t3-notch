@@ -39,7 +39,11 @@ final class WingAnimator {
         let box: CALayer
         /// The figure itself, which spins about its middle.
         let body: CALayer
+        /// Until when it's still moving under its own steam (a jump or a glide).
         var busyUntil: CFTimeInterval = 0
+        /// The burst waiting for it at the end of a jump, moved along if the jump is redirected.
+        var landing: [CALayer] = []
+        var landingColor: NSColor?
     }
 
     private let stage = CALayer()
@@ -53,12 +57,16 @@ final class WingAnimator {
     private var debris: [(layer: CALayer, until: CFTimeInterval)] = []
     private var style: WingStyle?
     private var height: CGFloat = 0
-    /// False until the first update, which shows what's there without fanfare.
+    /// False until an update first shows figures, which appear without fanfare.
     private var primed = false
+    /// Animating on screen, in `CACurrentMediaTime`; false for the demo's simulated clock.
+    private let live: Bool
+    private var sweepScheduled = false
 
     private static let groups: [WingLayout.Group] = [.running, .waiting, .woke, .done, .read]
 
-    init() {
+    init(live: Bool = true) {
+        self.live = live
         stage.anchorPoint = .zero
         stage.bounds = .zero
     }
@@ -93,11 +101,7 @@ final class WingAnimator {
         }
         style = layout.style
         self.height = height
-        debris.removeAll { d in
-            if d.until > now { return false }
-            d.layer.removeFromSuperlayer()
-            return true
-        }
+        sweep(now: now)
 
         // Each group's threads in wing order. Running and waiting threads keep their places, and
         // newcomers join on the left, so nobody shuffles when one comes or goes.
@@ -105,8 +109,6 @@ final class WingAnimator {
         var groupOf: [String: WingLayout.Group] = [:]
         for g in Self.groups {
             var list = keys[g]
-            let shown = layout.items.filter { $0.item.group == g && !$0.item.isMore }.count
-            if list.count < shown { list += (list.count..<shown).map { "~\(g)~\($0)" } }
             if g == .running || g == .waiting, let before = members[g] {
                 let had = Set(before), has = Set(list)
                 list = list.filter { !had.contains($0) } + before.filter { has.contains($0) }
@@ -135,7 +137,8 @@ final class WingAnimator {
             }
             let i = shownCount[g, default: 0]
             shownCount[g] = i + 1
-            placed.append((next[g]![i], p.item, x, p.width))
+            guard let list = next[g], i < list.count else { continue } // a layout for other counts
+            placed.append((list[i], p.item, x, p.width))
         }
 
         // Neighbors wait for a jumper to leave the ground before they close up behind it.
@@ -167,15 +170,16 @@ final class WingAnimator {
                 // First show: nothing to animate from.
             } else if let old = figures.removeValue(forKey: p.key) {
                 // Changed state while on show: jump over.
-                let from = old.busyUntil > now ? (old.box.presentation()?.position ?? old.box.position) : old.box.position
+                let from = Self.onScreen(old.box)
                 old.box.removeFromSuperlayer()
+                old.landing.forEach { $0.removeFromSuperlayer() }
                 fly(&f, from: from, color: WingLayout.color(old.group), delay: 0.07 * Double(flights), now: now)
                 flights += 1
             } else if let was = wasIn[p.key], let more = mores[was] {
                 // Out of a "+N": from its own group's, or jumping over from another's.
                 let from = CGPoint(x: more.x, y: f.box.position.y)
                 if was == g {
-                    pop(f, delay: 0, burst: false, now: now, from: from)
+                    pop(&f, delay: 0, burst: false, now: now, from: from)
                 } else {
                     fly(&f, from: from, color: WingLayout.color(was), delay: 0.07 * Double(flights), now: now)
                     flights += 1
@@ -183,7 +187,7 @@ final class WingAnimator {
             } else {
                 // A new agent.
                 // After the wing has grown room for it.
-                pop(f, delay: 0.18 + 0.04 * Double(pops), burst: popping <= 4, now: now)
+                pop(&f, delay: 0.18 + 0.04 * Double(pops), burst: popping <= 4, now: now)
                 pops += 1
             }
             kept[p.key] = f
@@ -202,7 +206,45 @@ final class WingAnimator {
         figures = kept
         members = next
         mores = newMores
-        primed = true
+        if !kept.isEmpty { primed = true }
+        scheduleSweep(now: now)
+    }
+
+    /// Where each shown figure stands, by key, in points left of the right edge. For tests.
+    var positions: [String: CGFloat] { figures.mapValues(\.box.position.x) }
+    /// How many layers the wing holds, exits and sparks included. For tests.
+    var layerCount: Int { stage.sublayers?.count ?? 0 }
+
+    /// Drops exits and sparks that have played out.
+    func sweep(now: CFTimeInterval) {
+        debris.removeAll { d in
+            if d.until > now { return false }
+            d.layer.removeFromSuperlayer()
+            return true
+        }
+    }
+
+    /// Clears what's left of the exits once they're over, rather than at the next update, which
+    /// may be hours away (a puffed figure keeps its loops running while invisible).
+    private func scheduleSweep(now: CFTimeInterval) {
+        guard live, !sweepScheduled, let last = debris.map(\.until).max() else { return }
+        sweepScheduled = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + max(last - now, 0) + 0.05) { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.sweepScheduled = false
+                CATransaction.begin()
+                CATransaction.setDisableActions(true)
+                self.sweep(now: CACurrentMediaTime())
+                CATransaction.commit()
+                self.scheduleSweep(now: CACurrentMediaTime())
+            }
+        }
+    }
+
+    /// Where a figure shows right now, mid-move or not.
+    private static func onScreen(_ layer: CALayer) -> CGPoint {
+        layer.presentation()?.position ?? layer.position
     }
 
     // MARK: Moves
@@ -224,17 +266,23 @@ final class WingAnimator {
         guard from != to else { return }
         f.box.position = to
         if f.busyUntil > now {
-            let here = f.box.presentation()?.position ?? from
+            // Mid-jump or mid-glide: head for the new spot in the time it had left, still flipping,
+            // and move the landing burst along.
+            let here = Self.onScreen(f.box)
+            let left = max(f.busyUntil - now, 0.25)
             f.box.removeAnimation(forKey: "flight")
-            f.body.removeAnimation(forKey: "spin")
             let glide = CABasicAnimation(keyPath: "position")
             glide.fromValue = NSValue(point: here)
             glide.toValue = NSValue(point: to)
-            glide.duration = 0.3
+            glide.duration = left
             glide.beginTime = now
-            glide.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            glide.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
             f.box.add(glide, forKey: "flight")
-            f.busyUntil = now + 0.3
+            f.busyUntil = now + left
+            f.landing.forEach { $0.removeFromSuperlayer() }
+            f.landing = f.landingColor.map {
+                burst(at: CGPoint(x: to.x, y: to.y + 2), color: $0, count: 8, reach: 10, begin: now + left)
+            } ?? []
             return
         }
         let spring = CASpringAnimation(keyPath: "position.x")
@@ -320,11 +368,12 @@ final class WingAnimator {
                   color: old.blended(withFraction: u, of: new) ?? new, size: 2,
                   begin: begin + crouch + air * u, duration: 0.32)
         }
-        burst(at: CGPoint(x: to.x, y: to.y + 2), color: new, count: 8, reach: 10, begin: begin + crouch + air)
+        f.landing = burst(at: CGPoint(x: to.x, y: to.y + 2), color: new, count: 8, reach: 10, begin: begin + crouch + air)
+        f.landingColor = new
     }
 
     /// A new agent grows out of the ground with a wobble.
-    private func pop(_ f: Figure, delay: CFTimeInterval, burst withBurst: Bool, now: CFTimeInterval, from: CGPoint? = nil) {
+    private func pop(_ f: inout Figure, delay: CFTimeInterval, burst withBurst: Bool, now: CFTimeInterval, from: CGPoint? = nil) {
         let grow = CASpringAnimation(keyPath: "transform.scale")
         grow.fromValue = 0
         grow.toValue = 1
@@ -344,6 +393,7 @@ final class WingAnimator {
             move.fillMode = .backwards
             move.timingFunction = CAMediaTimingFunction(name: .easeOut)
             f.box.add(move, forKey: "flight")
+            f.busyUntil = now + delay + 0.3
         }
         if withBurst {
             let c = f.box.position
@@ -364,17 +414,25 @@ final class WingAnimator {
         exit.duration = 0.3
         exit.beginTime = now
         exit.timingFunction = CAMediaTimingFunction(name: .easeIn)
+        let c = Self.onScreen(f.box)
+        f.box.removeAllAnimations()
+        f.box.position = c
         f.box.opacity = 0
         f.box.add(exit, forKey: "exit")
         debris.append((f.box, now + 0.4))
-        let c = f.box.position
-        burst(at: CGPoint(x: c.x, y: c.y + 5), color: NSColor(white: 0.75, alpha: 1), count: 6, reach: 8, begin: now + 0.12)
+        f.landing.forEach { $0.removeFromSuperlayer() }
+        // Over before the wing closes in (`NotchState.shrinkDelay`).
+        burst(at: CGPoint(x: c.x, y: c.y + 5), color: NSColor(white: 0.75, alpha: 1), count: 6, reach: 8, begin: now + 0.06,
+              duration: 0.3)
     }
 
     /// A figure pushed out of view shrinks into its group's "+N".
     private func sink(_ f: Figure, into more: CGPoint, now: CFTimeInterval) {
+        let here = Self.onScreen(f.box)
+        f.box.removeAllAnimations()
+        f.landing.forEach { $0.removeFromSuperlayer() }
         let move = CABasicAnimation(keyPath: "position")
-        move.fromValue = NSValue(point: f.box.position)
+        move.fromValue = NSValue(point: here)
         move.toValue = NSValue(point: CGPoint(x: more.x, y: f.box.position.y))
         let scale = CABasicAnimation(keyPath: "transform.scale")
         scale.fromValue = 1
@@ -442,20 +500,23 @@ final class WingAnimator {
     }
 
     /// `count` pixels flying out of `center` and fading, mostly upward.
-    private func burst(at center: CGPoint, color: NSColor, count: Int, reach: CGFloat, begin: CFTimeInterval) {
-        for i in 0..<count {
+    @discardableResult
+    private func burst(at center: CGPoint, color: NSColor, count: Int, reach: CGFloat, begin: CFTimeInterval,
+                       duration: CFTimeInterval = 0.42) -> [CALayer] {
+        (0..<count).map { i in
             // Fanned over the upper half and a little below the sides.
             let angle = CGFloat(-0.35 + (Double.pi + 0.7) * Double(i) / Double(max(count - 1, 1)))
             let r: CGFloat = reach * (i.isMultiple(of: 2) ? 1 : 0.7)
             let end = CGPoint(x: center.x + r * cos(angle), y: center.y + r * sin(angle))
-            spark(at: center, to: end, color: i.isMultiple(of: 3) ? .white : color, size: i.isMultiple(of: 2) ? 2 : 1.5,
-                  begin: begin, duration: 0.42)
+            return spark(at: center, to: end, color: i.isMultiple(of: 3) ? .white : color, size: i.isMultiple(of: 2) ? 2 : 1.5,
+                         begin: begin, duration: duration)
         }
     }
 
     /// A square of `size` points that drifts from `start` to `end` and fades out.
+    @discardableResult
     private func spark(at start: CGPoint, to end: CGPoint, color: NSColor, size: CGFloat, begin: CFTimeInterval,
-                       duration: CFTimeInterval) {
+                       duration: CFTimeInterval) -> CALayer {
         let s = CALayer()
         s.bounds = CGRect(x: 0, y: 0, width: size, height: size)
         s.position = end
@@ -476,5 +537,6 @@ final class WingAnimator {
         s.add(g, forKey: "spark")
         stage.insertSublayer(s, at: 0)
         debris.append((s, begin + duration + 0.1))
+        return s
     }
 }

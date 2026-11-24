@@ -161,7 +161,7 @@ enum Demo {
         wing.anchorPoint = .zero
         wing.position = CGPoint(x: notchMinX - NotchState.wingTrail, y: size.height - notch.height)
         scene.addSublayer(wing)
-        let animator = WingAnimator()
+        let animator = WingAnimator(live: false)
 
         // The list shows only inside the black shape, as it grows and shrinks.
         let clip = CALayer()

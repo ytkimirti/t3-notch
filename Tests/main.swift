@@ -1,4 +1,5 @@
 import Foundation
+import QuartzCore
 
 // Invariants of the T3 status port in Sources/Store.swift. Run with ./test.sh.
 
@@ -263,6 +264,34 @@ check(readHeavy.items.filter { $0.item == .runner }.count == 6 && readHeavy.item
 let readOnly = WingLayout(style: .critters, running: 12, waiting: 0, done: 0, read: 5)
 check(readOnly.items.filter { $0.item == .dozer }.count == 1 && readOnly.items.contains { $0.item == .more(4, .read) },
       "read keeps one figure when the rest is full")
+
+// The animator follows each thread's figure from update to update.
+MainActor.assumeIsolated {
+    let animator = WingAnimator(live: false)
+    let root = CALayer()
+    root.bounds = CGRect(x: 0, y: 0, width: 200, height: 32)
+    @MainActor func show(_ k: WingKeys, at time: CFTimeInterval) {
+        let layout = WingLayout(style: .critters, running: k.running.count, waiting: k.waiting.count, woke: k.woke.count,
+                                done: k.done.count, read: k.read.count)
+        animator.update(root: root, layout: layout, keys: k, height: 32, now: time)
+    }
+    show(WingKeys(running: ["a", "b"]), at: 0)
+    let before = animator.positions
+    show(WingKeys(running: ["a", "b", "c"]), at: 1)
+    let after = animator.positions
+    check(after["a"] == before["a"] && after["b"] == before["b"], "a newcomer doesn't shift the others")
+    check(after["c"]! < after["a"]! && after["c"]! < after["b"]!, "newcomers join on the left")
+    show(WingKeys(running: ["a", "c"], done: ["b"]), at: 2)
+    check(animator.positions["b"]! > animator.positions["a"]!, "a finished agent moves over to done")
+    show(WingKeys(), at: 3)
+    check(animator.positions.isEmpty, "nothing left shows nothing")
+    animator.sweep(now: 10)
+    check(animator.layerCount == 0, "exits are cleared once over")
+    show(WingKeys(running: (0..<14).map { "r\($0)" }), at: 20)
+    check(animator.positions.count == 10 && animator.layerCount == 11, "ten figures and a +N")
+    show(WingKeys(running: (0..<14).map { "r\($0)" }, done: ["r0"]), at: 30)
+    check(Set(animator.positions.keys).count == animator.positions.count, "one figure per thread")
+}
 
 print(failures == 0 ? "all tests passed" : "\(failures) failed")
 exit(failures == 0 ? 0 : 1)
