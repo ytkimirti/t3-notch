@@ -52,8 +52,16 @@ enum Demo {
         ]
     }()
 
-    /// One figure for every gag: shades and headphones, cigar and paper, coffee, bubble, dream.
-    static let gags = [Beat(running: ["a", "b"], waiting: ["c", "d"], woke: ["e"], done: ["f"], read: ["g"], seconds: 12)]
+    /// Every trait on show: the working ones, then the rest. Keys name their trait.
+    static let gags: [Beat] = {
+        func keys(_ gags: [WingLayout.Gag]) -> [String] { gags.map(\.rawValue) }
+        return [
+            Beat(running: keys([.shades, .headphones, .propeller, .headband, .crown, .party, .tophat, .bird, .mustache]),
+                 done: keys([.nightcap]), seconds: 7),
+            Beat(waiting: keys([.cigar, .paper, .phone, .gum, .umbrella]), woke: keys([.coffee]), done: keys([.bubble, .halo]),
+                 read: keys([.dream]), seconds: 9),
+        ]
+    }()
 
     static func run(to dir: String) {
         let store = demoStore()
@@ -71,14 +79,14 @@ enum Demo {
             let frames = render(style: style, beats: beats, store: store, to: out)
             print("wrote \(frames) frames to \(out)")
         }
-        // The easter eggs, a few seconds apart instead of minutes, so one GIF shows them all.
+        // Every trait, so one GIF shows them all.
         let out = "\(dir)/gags"
         try? FileManager.default.createDirectory(atPath: out, withIntermediateDirectories: true)
         for name in (try? FileManager.default.contentsOfDirectory(atPath: out)) ?? [] where name.hasPrefix("frame-") {
             try? FileManager.default.removeItem(atPath: "\(out)/\(name)")
         }
-        WingLayout.gagGap = 1.5
-        defer { WingLayout.gagGap = nil }
+        WingLayout.forcedTraits = Dictionary(uniqueKeysWithValues: WingLayout.Gag.allCases.map { ($0.rawValue, $0) })
+        defer { WingLayout.forcedTraits = [:] }
         let frames = render(style: .critters, beats: gags, store: store, to: out)
         print("wrote \(frames) frames to \(out)")
     }

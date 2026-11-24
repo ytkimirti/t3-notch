@@ -37,13 +37,15 @@ it again and it comes back.
 working, glance around and tap their feet while waiting, nudge now and then when just woken, sleep
 under floating z's when done, and doze dimly once read.
 
-Once in a long while one does a little bit of its own for a few seconds: shades, headphones, a
-cigar and a smoke ring, the paper, a coffee, a bubble, a dream.
+About half the agents are characters with a trait they keep on: shades, a cigar, a crown, a
+bird on the head, an umbrella in its own little rain, and more. The thread picks it, so an agent
+keeps its own, with one trait for each state. Most do a little bit now and then: the cigar
+glows and blows a smoke ring, the top hat tips, the bubble gum pops.
 
 <details>
 <summary>Spoilers</summary>
 <p align="center">
-  <img src="docs/gags.gif" width="632" alt="Critters doing their easter eggs, minutes apart in the app and seconds apart here: a blue one drops on shades, another wears headphones while notes float off, a grey one smokes a cigar with half-shut eyes and blows a smoke ring, another reads the paper and peeks over it, an orange one sips a steaming coffee, a sleeping green one blows a bubble that pops and startles it, and a dim one dreams of a heart.">
+  <img src="docs/gags.gif" width="686" alt="Every trait: working critters in shades, headphones, a propeller beanie, a ninja headband, a crown, a party hat that throws confetti, a top hat they tip, a bird on the head, and a mustache; waiting ones smoking a cigar, reading the paper, scrolling a phone, blowing bubble gum, and under an umbrella in the rain; a woken one sipping coffee; sleeping ones in a nightcap, blowing a snot bubble, and under a halo; and a dim one dreaming of a heart.">
 </p>
 </details>
 
@@ -156,7 +158,7 @@ opening a window.
 
 `--demo <dir>` needs no server: it plays a scripted set of made-up agents through the real wing
 layers and writes the frames. The GIFs above come from (needs `ffmpeg`;
-`gags` plays the easter eggs seconds apart):
+`gags` shows every trait):
 
 ```sh
 build/t3notch.app/Contents/MacOS/t3notch --demo build/demo

@@ -167,7 +167,7 @@ final class WingAnimator {
             var index = 0
             while usedIndex[g, default: []].contains(index) { index += 1 }
             usedIndex[g, default: []].insert(index)
-            var f = makeFigure(p.item, x: p.x, width: p.width, index: index)
+            var f = makeFigure(p.item, x: p.x, width: p.width, index: index, key: p.key)
             stage.addSublayer(f.box)
             if !animate {
                 figures[p.key]?.box.removeFromSuperlayer()
@@ -267,8 +267,8 @@ final class WingAnimator {
 
     // MARK: Moves
 
-    private func makeFigure(_ item: WingLayout.Item, x: CGFloat, width: CGFloat, index: Int) -> Figure {
-        let body = WingLayout.figure(item, x: 0, height: height, index: index)
+    private func makeFigure(_ item: WingLayout.Item, x: CGFloat, width: CGFloat, index: Int, key: String) -> Figure {
+        let body = WingLayout.figure(item, x: 0, height: height, index: index, key: key)
         let foot = body.frame.minY
         let box = CALayer()
         box.bounds = CGRect(x: 0, y: 0, width: width, height: height)

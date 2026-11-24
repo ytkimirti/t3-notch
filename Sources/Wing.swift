@@ -189,10 +189,11 @@ struct WingLayout: Equatable {
     }
 
     /// One agent's figure at `x`, the `index`th of its group (which staggers its animations).
-    static func figure(_ item: Item, x: CGFloat, height: CGFloat, index: Int) -> CALayer {
+    /// `key` is the agent's thread, which picks its trait (see `trait(for:key:)`).
+    static func figure(_ item: Item, x: CGFloat, height: CGFloat, index: Int, key: String? = nil) -> CALayer {
         switch item {
         case .runner, .waiter, .waker, .sleeper, .dozer:
-            return critter(x: x, height: height, group: item.group, index: index)
+            return critter(x: x, height: height, group: item.group, index: index, key: key)
         case .bar:
             return bar(x: x, height: height, index: index)
         case .idleBar, .wokeBar:
@@ -217,7 +218,7 @@ struct WingLayout: Equatable {
     /// - Woke: glances and blinks, and now and then nudges up a point.
     /// - Done: sleeps, breathing slowly, while a small and a big "z" float up.
     /// - Read: dozes dimly, breathing slower still.
-    private static func critter(x: CGFloat, height: CGFloat, group: Group, index: Int) -> CALayer {
+    private static func critter(x: CGFloat, height: CGFloat, group: Group, index: Int, key: String?) -> CALayer {
         let size = critterSize
         let root = CALayer()
         root.frame = CGRect(x: x, y: ((height - size.height) / 2).rounded(), width: size.width, height: size.height)
@@ -274,8 +275,9 @@ struct WingLayout: Equatable {
                 root.addSublayer(z(at: CGPoint(x: size.width - 3, y: size.height - 6), size: 7, rise: rise, period: 2.2,
                                    offset: phase(index, 2.2) + 1.1))
             }
-            addGag(gag(for: group, index: index), root: root, body: bodyLayer, eyes: eyes, color: color, index: index,
-                   headroom: headroom)
+            if let key, let gag = trait(for: group, key: key) {
+                addGag(gag, root: root, body: bodyLayer, eyes: eyes, group: group, index: index, key: key, headroom: headroom)
+            }
             return root
         }
 
@@ -333,8 +335,9 @@ struct WingLayout: Equatable {
         case .done, .read:
             break // asleep, handled above
         }
-        addGag(gag(for: group, index: index), root: root, body: bodyLayer, eyes: eyes, color: color, index: index,
-               headroom: headroom)
+        if let key, let gag = trait(for: group, key: key) {
+            addGag(gag, root: root, body: bodyLayer, eyes: eyes, group: group, index: index, key: key, headroom: headroom)
+        }
         return root
     }
 

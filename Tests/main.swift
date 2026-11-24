@@ -310,12 +310,12 @@ MainActor.assumeIsolated {
     check(Set(animator.positions.keys).count == animator.positions.count, "one figure per thread")
 }
 
-// Gags: every critter has one, and its stepped tracks hold a value per key time, in order.
+// Traits: each one's stepped tracks hold a value per key time, in order, in every group that has it.
 do {
-    var seen = Set<String>()
     func walk(_ layer: CALayer, _ name: String) -> Int {
         var count = 0
-        if let group = layer.animation(forKey: "gag") as? CAAnimationGroup {
+        for key in layer.animationKeys() ?? [] where key == "gag" {
+            guard let group = layer.animation(forKey: key) as? CAAnimationGroup else { continue }
             count += 1
             for case let k as CAKeyframeAnimation in group.animations ?? [] {
                 let times = (k.keyTimes ?? []).map(\.doubleValue)
@@ -326,15 +326,34 @@ do {
         }
         return count + (layer.sublayers ?? []).reduce(0) { $0 + walk($1, name) }
     }
-    for item in [WingLayout.Item.runner, .waiter, .waker, .sleeper, .dozer] {
-        for index in 0..<4 {
-            let gag = WingLayout.gag(for: item.group, index: index)
-            seen.insert("\(gag)")
-            check(walk(WingLayout.figure(item, x: 0, height: 32, index: index), "\(gag)") > 0, "\(gag) plays")
+    let items: [WingLayout.Item] = [.runner, .waiter, .waker, .sleeper, .dozer]
+    let plain = walk(WingLayout.figure(.runner, x: 0, height: 32, index: 0), "plain")
+    var everywhere = Set<WingLayout.Gag>()
+    for item in items {
+        for gag in WingLayout.gags(for: item.group) {
+            everywhere.insert(gag)
+            WingLayout.forcedTraits = ["t": gag]
+            let layers = WingLayout.figure(item, x: 0, height: 32, index: 1, key: "t")
+            let sublayers = { (l: CALayer) -> Int in
+                func n(_ l: CALayer) -> Int { 1 + (l.sublayers ?? []).reduce(0) { $0 + n($1) } }
+                return n(l)
+            }
+            check(sublayers(layers) > sublayers(WingLayout.figure(item, x: 0, height: 32, index: 1)), "\(gag) adds props")
+            _ = walk(layers, "\(gag) as \(item.group)")
         }
     }
-    check(seen.count == WingLayout.Gag.allCases.count, "every gag has a critter")
-    check(walk(WingLayout.figure(.bar, x: 0, height: 32, index: 0), "bar") == 0, "bars have no gags")
+    WingLayout.forcedTraits = [:]
+    check(plain == 0, "no key, no trait")
+    check(everywhere == Set(WingLayout.Gag.allCases), "every trait shows up somewhere")
+    let keys = (0..<2000).map { "thread-\($0)" }
+    let characters = keys.filter { WingLayout.trait(for: .running, key: $0) != nil }
+    check((800...1200).contains(characters.count), "about half are characters (\(characters.count))")
+    check(keys.allSatisfy { (WingLayout.trait(for: .running, key: $0) == nil) == (WingLayout.trait(for: .done, key: $0) == nil) },
+          "a character has a trait in every group")
+    check(Set(characters.compactMap { WingLayout.trait(for: .waiting, key: $0) }).count == WingLayout.gags(for: .waiting).count,
+          "every waiting trait gets picked")
+    check(WingLayout.trait(for: .running, key: "thread-7") == WingLayout.trait(for: .running, key: "thread-7"), "stable")
+    check(walk(WingLayout.figure(.bar, x: 0, height: 32, index: 0, key: characters[0]), "bar") == 0, "bars have no traits")
 }
 
 print(failures == 0 ? "all tests passed" : "\(failures) failed")
