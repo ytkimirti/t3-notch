@@ -43,7 +43,7 @@ cigar and a smoke ring, the paper, a coffee, a bubble, a dream.
 <details>
 <summary>Spoilers</summary>
 <p align="center">
-  <img src="docs/gags.gif" width="508" alt="Critters doing their easter eggs, minutes apart in the app and seconds apart here: a blue one drops on shades, another wears headphones while notes float off, a grey one smokes a cigar with half-shut eyes and blows a smoke ring, another reads the paper and peeks over it, an orange one sips a steaming coffee, a sleeping green one blows a bubble that pops and startles it, and a dim one dreams of a heart.">
+  <img src="docs/gags.gif" width="632" alt="Critters doing their easter eggs, minutes apart in the app and seconds apart here: a blue one drops on shades, another wears headphones while notes float off, a grey one smokes a cigar with half-shut eyes and blows a smoke ring, another reads the paper and peeks over it, an orange one sips a steaming coffee, a sleeping green one blows a bubble that pops and startles it, and a dim one dreams of a heart.">
 </p>
 </details>
 
